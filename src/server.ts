@@ -22,6 +22,9 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = parseInt(process.env.PORT || '3131', 10);
 
+// Trust proxy for proper HTTPS detection behind reverse proxy
+app.set('trust proxy', true);
+
 // Validate required environment variables
 const requiredEnvVars = ['MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'SESSION_SECRET', 'REDIRECT_URI'];
 for (const envVar of requiredEnvVars) {
@@ -52,9 +55,10 @@ app.use(session({
   secret: process.env.SESSION_SECRET!,
   resave: false,
   saveUninitialized: false,
+  proxy: true, // Trust proxy for secure cookies
   cookie: { 
-    sameSite: 'lax', 
-    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    secure: false, // Allow HTTP for Docker internal, proxy handles HTTPS 
     maxAge: 24 * 60 * 60 * 1000 // 24 hours
   }
 }));
@@ -66,11 +70,7 @@ app.use('/', oauthServer.getRouter());
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
-    timestamp: new Date().toISOString(),
-    activeConnections: mcpManager.getActiveConnections(),
-    server: 'outline-mcp.netdaisy.com',
-    authenticated: !!(req.session as any)?.user,
-    storage: process.env.REDIS_URL ? 'redis' : 'memory'
+    timestamp: new Date().toISOString()
   });
 });
 

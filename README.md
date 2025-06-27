@@ -102,6 +102,30 @@ All tool schemas, API patterns, and functionality have been migrated from their 
    npm run dev
    ```
 
+### Docker Deployment (Recommended)
+
+For the simplest production deployment:
+
+1. **Copy environment template**
+   ```bash
+   cp .env.docker .env
+   ```
+
+2. **Configure your credentials in `.env`**
+   ```bash
+   # Edit with your actual OAuth and Outline API credentials
+   nano .env
+   ```
+
+3. **Launch with Docker Compose**
+   ```bash
+   docker-compose up -d
+   ```
+
+That's it! The service will be running at `http://localhost:3131` with Redis automatically configured.
+
+See [docker-quickstart.md](./docker-quickstart.md) for detailed Docker instructions.
+
 ### Usage
 
 #### Browser Access
