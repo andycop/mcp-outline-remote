@@ -1,106 +1,155 @@
-# MCP Outline Remote Server
+# MCP Outline Remote Server v2
 
 ## Project Overview
-This is a remote MCP (Model Context Protocol) server that provides tools for interacting with Outline (document management platform). It's based on a hello-world MCP server template with SSE (Server-Sent Events) transport.
+This is version 2 of the remote MCP (Model Context Protocol) server that provides tools for interacting with Outline (document management platform). Version 2 features comprehensive OAuth authentication, enhanced security, and production-ready architecture.
 
-## Current Status
-- ✅ Base MCP remote server template copied from `mcp-server` hello-world example
-- ✅ SSE transport configured for remote connections
-- ✅ Health endpoint and graceful shutdown implemented
-- ✅ **COMPLETED**: Migrated all Outline tools from stdio implementation
-- ✅ Document management tools implemented (search, get, create, update, delete, list, move)
-- ✅ Collection management tools implemented (list, get, create, update, delete)
-- ✅ Environment configuration with .env support
-- ✅ Build and deployment ready
+## v2 Current Status (2025-06-27)
+- ✅ **COMPLETED**: Migrated to OAuth-enabled mcp-server architecture
+- ✅ **COMPLETED**: All 12 Outline tools implemented with TypeScript
+- ✅ **COMPLETED**: Microsoft Azure OAuth 2.0 integration with PKCE
+- ✅ **COMPLETED**: Comprehensive security features and logging anonymization
+- ✅ **COMPLETED**: Modular architecture with clean separation of concerns
+- ✅ **COMPLETED**: Optional Redis storage with in-memory fallback
+- ✅ **COMPLETED**: Production deployment configuration
+
+## What's New in v2
+
+### 🔐 **OAuth 2.0 Authentication**
+- **Microsoft Azure/MS365 integration** with full PKCE support
+- **Session management** with secure HTTP-only cookies
+- **Authorization server** built-in for MCP client authentication
+- **Protected endpoints** - All MCP tools require authentication
+
+### 🛡️ **Enhanced Security**
+- **Logging anonymization system** - Automatically masks sensitive data
+  - Anonymization rules: strings ≥8 chars: `sk-1***5678`, <8 chars: `ab*de`
+  - Auto-protects tokens, secrets, session IDs, tenant IDs
+- **Security headers** via Helmet.js
+- **Environment validation** - Fails fast on missing required vars
+- **Graceful shutdown** handling
+
+### 🏗️ **Modular Architecture**
+- **Separated concerns**: auth, MCP, storage, utils, tools
+- **Tool organization**: documents/ and collections/ subdirectories
+- **Maintainable structure** for easy expansion
+
+### 📊 **Production Features**
+- **Optional Redis support** with automatic fallback
+- **Structured logging** throughout all modules
+- **Health checks** and monitoring endpoints
+- **Network binding** to 0.0.0.0 for Cloudflare tunnel compatibility
 
 ## Architecture
-- **Transport**: SSE over HTTP (port 3131)
-- **Framework**: @modelcontextprotocol/sdk with Express.js
-- **Target URL**: outline-mcp.netdaisy.com:3131
-- **Module Type**: ESM with TypeScript
 
-## Source Material
-The tools need to be migrated from: https://github.com/fellowapp/mcp-outline
-- This is currently a STDIO-based MCP server
-- Has comprehensive Outline API integration
-- Includes document and collection management tools
-
-## Implemented Tools
-All tools migrated from the Fellow Outline MCP server:
-
-1. **Document Tools**:
-   - ✅ search_documents - Search for documents with optional collection filtering
-   - ✅ get_document - Retrieve document by ID or shareId
-   - ✅ create_document - Create new documents with full options support
-   - ✅ update_document - Update existing documents with append option
-   - ✅ delete_document - Delete documents from Outline
-   - ✅ list_documents - List documents with filtering and pagination
-   - ✅ move_document - Move documents between collections
-
-2. **Collection Tools**:
-   - ✅ list_collections - List all collections with pagination
-   - ✅ get_collection - Retrieve specific collection details
-   - ✅ create_collection - Create new collections with customization
-   - ✅ update_collection - Update existing collection properties
-   - ✅ delete_collection - Delete collections from Outline
-
-## Migration Pattern
-Convert from STDIO pattern:
-```javascript
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [/* tool definitions */]
-}));
+### File Structure
+```
+src/
+├── server.ts          # Main Express app with OAuth integration
+├── auth/
+│   ├── oauth.ts       # OAuth 2.0 authorization server
+│   └── middleware.ts  # Authentication middleware  
+├── mcp/
+│   └── server.ts      # MCP server factory and management
+├── tools/
+│   ├── documents/     # 7 document management tools
+│   │   ├── create.ts, delete.ts, get.ts, list.ts
+│   │   ├── move.ts, search.ts, update.ts
+│   └── collections/   # 5 collection management tools
+│       ├── create.ts, delete.ts, get.ts, list.ts, update.ts
+├── storage/
+│   └── tokens.ts      # Token storage (Redis optional)
+├── utils/
+│   ├── logger.ts      # Secure logging with anonymization
+│   └── outline.ts     # Outline API client (lazy-loaded)
+└── views/
+    └── index.html     # HTML template for web interface
 ```
 
-To our SSE pattern:
+## Available Tools
+All tools migrated from the Fellow Outline MCP server with enhanced security:
+
+### Document Tools (7)
+- ✅ `list_documents` - List documents in a collection
+- ✅ `create_document` - Create a new document
+- ✅ `get_document` - Get a document by ID
+- ✅ `update_document` - Update a document
+- ✅ `delete_document` - Delete a document
+- ✅ `search_documents` - Search documents by query
+- ✅ `move_document` - Move a document to another collection
+
+### Collection Tools (5)
+- ✅ `list_collections` - List all collections
+- ✅ `create_collection` - Create a new collection
+- ✅ `get_collection` - Get a collection by ID
+- ✅ `update_collection` - Update a collection
+- ✅ `delete_collection` - Delete a collection
+
+## Environment Configuration
+
+### Required Variables
+```env
+# Microsoft OAuth
+MS_CLIENT_ID=your-azure-client-id
+MS_CLIENT_SECRET=your-azure-client-secret
+SESSION_SECRET=your-super-long-random-secret-key
+REDIRECT_URI=https://your-domain.com/auth/callback
+
+# Outline API
+OUTLINE_API_URL=https://your-outline-instance.com/api
+OUTLINE_API_TOKEN=your-outline-api-token
+```
+
+### Optional Variables
+```env
+MS_TENANT=common                      # or specific tenant ID
+REDIS_URL=redis://localhost:6379      # enables Redis storage
+PORT=3131
+NODE_ENV=development
+```
+
+## Key Technical Features
+
+### Lazy-Loaded Outline Client
+The Outline API client is lazy-loaded to ensure environment variables are available:
 ```typescript
-server.tool('search_documents', 'Search Outline documents', {
-  query: z.string().describe('Search query'),
-}, async ({ query }) => {
-  // Implementation
+// Creates client only when first used, after dotenv.config()
+export const outlineClient = new Proxy({} as AxiosInstance, {
+  get(target, prop) {
+    const client = createOutlineClient();
+    return (client as any)[prop];
+  }
 });
 ```
 
-## Environment Setup
-Required environment variables (see .env.example):
-- ✅ OUTLINE_API_TOKEN - Your Outline API token (required)
-- ✅ OUTLINE_API_URL - Outline API base URL (optional, defaults to https://app.getoutline.com/api)
-- ✅ PORT - Server port (optional, defaults to 3131)
+### OAuth Integration
+- **Browser flow**: Navigate to `/` → Login → Access tools
+- **MCP client flow**: Automated OAuth token exchange
+- **Session management**: Secure, HTTP-only cookies
+- **PKCE flow**: Enhanced security for public clients
 
-## Setup Instructions
-1. Copy `.env.example` to `.env`
-2. Add your Outline API token to the `.env` file
-3. Run `npm install` to install dependencies
-4. Run `npm run build` to build the project
-5. Run `npm start` to start the production server
-6. Or run `npm run dev` for development with watch mode
+### Network Configuration
+- **Binds to `0.0.0.0:3131`** for Cloudflare tunnel compatibility
+- **Public URL**: `https://outline-mcp.netdaisy.com`
+- **Internal URL**: `http://10.123.1.30:3131`
 
-## Commands
-- `npm run dev` - Development with watch mode  
-- `npm run build` - Build TypeScript to JavaScript
-- `npm run start` - Run production build
-- `npm test` - Run tests (to be added)
-
-## Current File Structure
-```
-src/
-  server.ts          # Main server with hello-world tool
-package.json         # Dependencies and scripts
-tsconfig.json        # TypeScript configuration  
-.gitignore          # Git ignore rules
+## Development Commands
+```bash
+npm run dev      # Development with hot reload
+npm run build    # Build TypeScript to JavaScript
+npm start        # Production mode
 ```
 
-## Migration Complete! ✅
+## Migration Notes from v1
+- **v1**: Simple SSE-based server with basic authentication
+- **v2**: Full OAuth integration, enhanced security, modular architecture
+- **Breaking changes**: Environment variables, authentication requirements
+- **Backward compatibility**: Same MCP tools, improved security and reliability
 
-The Outline MCP server migration is now complete. All tools have been successfully migrated from the stdio-based implementation to our SSE-based remote server framework.
+## Production Deployment
+1. Set `NODE_ENV=production`
+2. Configure `REDIS_URL` for token storage
+3. Use HTTPS for `REDIRECT_URI`
+4. Set secure session configuration
+5. Monitor logs for security events
 
-### Available Tools
-All 12 Outline tools are now available:
-- 7 Document management tools
-- 5 Collection management tools
-- Full error handling and validation
-- Proper SSE transport for remote connections
-- Environment-based configuration
-
-### Ready for Production
-The server is now ready for deployment at outline-mcp.netdaisy.com:3131 with all Outline API functionality preserved from the original Fellow implementation.
+The v2 server is production-ready with comprehensive security, OAuth authentication, and all Outline API functionality from the original Fellow implementation.
