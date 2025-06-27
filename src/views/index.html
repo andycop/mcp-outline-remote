@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MCP Server with OAuth</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+        .status { padding: 10px; border-radius: 5px; margin: 10px 0; }
+        .authenticated { background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .unauthenticated { background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .button { display: inline-block; padding: 10px 20px; margin: 10px 5px; text-decoration: none; border-radius: 5px; }
+        .login { background-color: #007bff; color: white; }
+        .logout { background-color: #dc3545; color: white; }
+        .info { background-color: #e2e3e5; color: #383d41; }
+    </style>
+</head>
+<body>
+    <h1>MCP Server with MS365 OAuth</h1>
+    
+    {{STATUS_SECTION}}
+    
+    <h2>Endpoints</h2>
+    <ul>
+        <li><strong>Health:</strong> <a href="/health">/health</a> (public)</li>
+        <li><strong>Login:</strong> <a href="/login">/login</a></li>
+        <li><strong>Status:</strong> <a href="/status">/status</a> (protected)</li>
+        <li><strong>MCP:</strong> <code>/v1/mcp</code> (protected)</li>
+    </ul>
+    
+    <p><em>This server uses MS365 OAuth for authentication. Only authenticated users can access the MCP endpoints.</em></p>
+</body>
+</html>
