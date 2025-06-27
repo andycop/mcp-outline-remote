@@ -8,10 +8,11 @@ A secure, production-ready Model Context Protocol (MCP) server that provides too
 
 ### v2 Enhancements ✨
 - **🔐 OAuth 2.0 Authentication** - Microsoft Azure/MS365 integration with PKCE support
+- **🐳 Docker Deployment** - Complete containerized setup with Docker Compose and Redis
 - **🛡️ Enhanced Security** - Comprehensive logging anonymization, security headers, session management
 - **🏗️ Modular Architecture** - Clean separation of concerns for maintainability
 - **📊 Production Monitoring** - Structured logging, health checks, graceful shutdown
-- **🔄 Optional Redis Storage** - Automatic fallback to in-memory for development
+- **🔄 Redis Integration** - Optional Redis storage with automatic in-memory fallback
 
 ### Core Functionality
 - **Document Management**: Search, create, retrieve, update, delete, list, and move documents
@@ -49,13 +50,26 @@ All tool schemas, API patterns, and functionality have been migrated from their 
 
 ## Quick Start
 
-### Prerequisites
-- Node.js 18+ 
-- npm or yarn
-- Microsoft Azure application registration ([Setup guide](./OAUTH_SETUP.md))
-- Outline API token ([Get one here](https://www.getoutline.com/developers))
+Choose your deployment method:
 
-### Installation
+### 🐳 **Option 1: Docker (Recommended)**
+- ✅ One-command deployment with `docker compose up -d`
+- ✅ Automatic Redis setup and networking
+- ✅ Production-ready with health checks and logging
+- ✅ Easy updates and rollbacks
+
+### 🔧 **Option 2: Manual Installation**
+- ✅ Full control over environment
+- ✅ Development flexibility
+- ✅ Custom Redis configuration
+
+### Prerequisites
+- **For Docker**: Docker and Docker Compose
+- **For Manual**: Node.js 18+, npm/yarn, optional Redis
+- **For Both**: Microsoft Azure application registration ([Setup guide](./OAUTH_SETUP.md))
+- **For Both**: Outline API token ([Get one here](https://www.getoutline.com/developers))
+
+### Manual Installation
 
 1. **Clone the repository**
    ```bash
@@ -104,7 +118,9 @@ All tool schemas, API patterns, and functionality have been migrated from their 
 
 ### Docker Deployment (Recommended)
 
-For the simplest production deployment:
+The easiest way to deploy this server is using Docker Compose with automatic Redis integration.
+
+#### Quick Start with Docker
 
 1. **Copy environment template**
    ```bash
@@ -113,18 +129,106 @@ For the simplest production deployment:
 
 2. **Configure your credentials in `.env`**
    ```bash
-   # Edit with your actual OAuth and Outline API credentials
-   nano .env
+   # Microsoft OAuth - REQUIRED
+   MS_CLIENT_ID=your-azure-client-id
+   MS_CLIENT_SECRET=your-azure-client-secret
+   SESSION_SECRET=your-super-long-random-secret-key
+   REDIRECT_URI=https://your-domain.com/auth/callback
+
+   # Outline API - REQUIRED  
+   OUTLINE_API_URL=https://your-outline-instance.com/api
+   OUTLINE_API_TOKEN=your-outline-api-token
+
+   # Optional
+   MS_TENANT=common
+   NODE_ENV=production
    ```
 
 3. **Launch with Docker Compose**
    ```bash
-   docker-compose up -d
+   docker compose up -d
    ```
 
-That's it! The service will be running at `http://localhost:3131` with Redis automatically configured.
+4. **Verify deployment**
+   ```bash
+   # Check service status
+   docker compose ps
 
-See [docker-quickstart.md](./docker-quickstart.md) for detailed Docker instructions.
+   # View logs
+   docker compose logs -f mcp-outline-server
+
+   # Test health endpoint
+   curl http://localhost:3131/health
+   ```
+
+#### Docker Features
+
+- **🐳 Multi-service setup**: Application + Redis with health checks
+- **🔒 Security hardened**: Non-root user, isolated network, proper secrets handling
+- **📊 Production ready**: Persistent volumes, restart policies, comprehensive logging
+- **🚀 One-command deployment**: `docker compose up -d` and you're running
+- **🔄 Automatic Redis**: No manual Redis setup required
+
+#### Service Access
+
+- **Application**: http://localhost:3131
+- **Health Check**: http://localhost:3131/health  
+- **MCP Endpoint**: http://localhost:3131/v1/mcp (requires authentication)
+
+#### Management Commands
+
+```bash
+# Start services
+docker compose up -d
+
+# Stop services  
+docker compose down
+
+# View logs
+docker compose logs -f
+
+# Restart just the app
+docker compose restart mcp-outline-server
+
+# Update and rebuild
+git pull origin v2
+docker compose build --no-cache
+docker compose up -d
+```
+
+#### Production Notes
+
+- **Data persistence**: Redis data persists in Docker volume `redis_data`
+- **Application logs**: Available in `./logs` directory (mounted volume)
+- **Health monitoring**: Both services have health checks enabled
+- **Auto-restart**: Services restart automatically unless stopped manually
+- **Network isolation**: Services communicate via `mcp-network` bridge
+
+#### Troubleshooting Docker
+
+**Container won't start:**
+```bash
+docker compose logs mcp-outline-server
+```
+
+**Reset everything (clean slate):**
+```bash
+docker compose down -v
+docker compose build --no-cache  
+docker compose up -d
+```
+
+**Check Redis connectivity:**
+```bash
+docker compose exec redis redis-cli ping
+```
+
+**Access container shell:**
+```bash
+docker compose exec mcp-outline-server sh
+```
+
+See [docker-quickstart.md](./docker-quickstart.md) for complete Docker documentation.
 
 ### Usage
 
@@ -242,32 +346,43 @@ npm test         # Run tests (to be implemented)
 
 ```
 src/
-├── server.ts          # Main Express application
+├── server.ts          # Main Express application with OAuth integration
 ├── auth/
 │   ├── oauth.ts       # OAuth 2.0 authorization server
 │   └── middleware.ts  # Authentication middleware
 ├── mcp/
 │   └── server.ts      # MCP server factory and management
 ├── tools/
-│   ├── documents/     # Document management tools
+│   ├── documents/     # Document management tools (7 tools)
 │   │   ├── create.ts, delete.ts, get.ts, list.ts
 │   │   ├── move.ts, search.ts, update.ts
-│   └── collections/   # Collection management tools
+│   └── collections/   # Collection management tools (5 tools)
 │       ├── create.ts, delete.ts, get.ts, list.ts, update.ts
 ├── storage/
-│   └── tokens.ts      # Token storage (Redis optional)
+│   └── tokens.ts      # Token storage (Redis with in-memory fallback)
 ├── utils/
-│   ├── logger.ts      # Secure logging with anonymization
-│   └── outline.ts     # Outline API client
+│   ├── logger.ts      # Secure logging with data anonymization
+│   └── outline.ts     # Lazy-loaded Outline API client
 └── views/
-    └── index.html     # HTML template
+    └── index.html     # Web interface HTML template
 
-package.json           # Dependencies and scripts
+# Configuration
+package.json           # Dependencies and build scripts
 tsconfig.json          # TypeScript configuration
-.env.example          # Environment variables template
-ARCHITECTURE.md       # Detailed technical documentation
-OAUTH_SETUP.md        # OAuth configuration guide
-CLAUDE.md            # Project documentation
+.env.docker           # Docker environment template
+.env.example          # Local development environment template
+
+# Docker Deployment
+Dockerfile             # Multi-stage Node.js Docker build
+docker-compose.yml     # Full stack with Redis and networking
+.dockerignore         # Docker build exclusions
+docker-quickstart.md  # Complete Docker setup guide
+
+# Documentation
+README.md             # This file - comprehensive project documentation
+ARCHITECTURE.md       # Detailed technical architecture documentation
+OAUTH_SETUP.md        # Microsoft Azure OAuth configuration guide
+CLAUDE.md            # Project development instructions and context
 ```
 
 ## Architecture
