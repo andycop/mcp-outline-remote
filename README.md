@@ -10,6 +10,16 @@ A remote Model Context Protocol (MCP) server that provides tools for interacting
 - **Production Ready**: Built with TypeScript, Express.js, and comprehensive error handling
 - **Environment Configuration**: Easy setup with environment variables
 
+## Attribution
+
+This implementation is based on the excellent work by the [Fellow team](https://github.com/fellowapp/mcp-outline):
+
+- **Original Project**: https://github.com/fellowapp/mcp-outline
+- **License**: ISC License
+- **Authors**: Fellow team
+
+All tool schemas, API patterns, and functionality have been migrated from their implementation while adapting to our SSE-based remote server architecture. We gratefully acknowledge their contribution to the MCP ecosystem.
+
 ## Available Tools
 
 ### Document Tools (7)
@@ -173,16 +183,6 @@ All tools include comprehensive error handling:
 - Rate limiting responses
 
 Errors are returned in a structured format with helpful messages.
-
-## Attribution
-
-This implementation is based on the excellent work by the [Fellow team](https://github.com/fellowapp/mcp-outline):
-
-- **Original Project**: https://github.com/fellowapp/mcp-outline
-- **License**: ISC License
-- **Authors**: Fellow team
-
-All tool schemas, API patterns, and functionality have been migrated from their implementation while adapting to our SSE-based remote server architecture. We gratefully acknowledge their contribution to the MCP ecosystem.
 
 ## Contributing
 
