@@ -1,0 +1,58 @@
+services:
+  mcp-outline-server:
+    build: .
+    container_name: mcp-outline-remote-v2
+    restart: unless-stopped
+    ports:
+      - "3131:3131"
+    environment:
+      # Microsoft OAuth - REQUIRED
+      - MS_CLIENT_ID=${MS_CLIENT_ID}
+      - MS_CLIENT_SECRET=${MS_CLIENT_SECRET}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - REDIRECT_URI=${REDIRECT_URI}
+      
+      # Outline API - REQUIRED  
+      - OUTLINE_API_URL=${OUTLINE_API_URL}
+      - OUTLINE_API_TOKEN=${OUTLINE_API_TOKEN}
+      
+      # Optional
+      - MS_TENANT=${MS_TENANT:-common}
+      - PORT=3131
+      - NODE_ENV=${NODE_ENV:-production}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+    networks:
+      - mcp-network
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3131/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    container_name: mcp-outline-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - mcp-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  mcp-network:
+    driver: bridge
