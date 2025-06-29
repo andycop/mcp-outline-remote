@@ -96,7 +96,8 @@ export class OAuthServer {
         client_id: req.body.client_id,
         redirect_uri: req.body.redirect_uri,
         code: req.body.code ? anonymizeKey(req.body.code) : undefined,
-        code_verifier: req.body.code_verifier ? anonymizeKey(req.body.code_verifier) : undefined
+        code_verifier: req.body.code_verifier ? anonymizeKey(req.body.code_verifier) : undefined,
+        refresh_token: req.body.refresh_token ? anonymizeKey(req.body.refresh_token) : undefined
       });
       
       if (!req.body || Object.keys(req.body).length === 0) {
@@ -104,60 +105,17 @@ export class OAuthServer {
         return;
       }
 
-      const { grant_type, code, client_id, code_verifier, redirect_uri } = req.body;
+      const { grant_type, code, client_id, code_verifier, redirect_uri, refresh_token } = req.body;
 
-      if (grant_type !== 'authorization_code') {
+      if (grant_type === 'authorization_code') {
+        await this.handleAuthorizationCodeGrant(req, res, { code, client_id, code_verifier, redirect_uri });
+      } else if (grant_type === 'refresh_token') {
+        await this.handleRefreshTokenGrant(req, res, { refresh_token, client_id });
+      } else {
         res.status(400).json({ error: 'unsupported_grant_type' });
         return;
       }
 
-      const codeData = await this.storage.getAuthCode(code);
-      if (!codeData) {
-        res.status(400).json({ error: 'invalid_grant' });
-        return;
-      }
-
-      if (codeData.clientId !== client_id || codeData.redirectUri !== redirect_uri) {
-        res.status(400).json({ error: 'invalid_client' });
-        return;
-      }
-
-      // Verify PKCE if present
-      if (codeData.codeChallenge && codeData.codeChallengeMethod === 'S256') {
-        const crypto = await import('crypto');
-        const hash = crypto.createHash('sha256').update(code_verifier || '').digest('base64url');
-        if (hash !== codeData.codeChallenge) {
-          res.status(400).json({ error: 'invalid_grant' });
-          return;
-        }
-      }
-
-      // Generate access token
-      const accessToken = randomUUID();
-      const tokenData = {
-        token: accessToken,
-        clientId: client_id,
-        userId: codeData.userId,
-        scope: codeData.scope,
-        expiresAt: Date.now() + 3600000 // 1 hour
-      };
-
-      await this.storage.setAccessToken(accessToken, tokenData);
-      await this.storage.deleteAuthCode(code);
-
-      logger.info('Access token issued', {
-        client_id: client_id,
-        userId: anonymizeKey(codeData.userId),
-        scope: codeData.scope,
-        expires_in: 3600
-      });
-
-      res.json({
-        access_token: accessToken,
-        token_type: 'Bearer',
-        expires_in: 3600,
-        scope: codeData.scope
-      });
     });
 
     // OAuth Discovery/Metadata endpoint
@@ -169,7 +127,7 @@ export class OAuthServer {
         authorization_endpoint: `${baseUrl}/authorize`,
         token_endpoint: `${baseUrl}/token`,
         response_types_supported: ['code'],
-        grant_types_supported: ['authorization_code'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
         code_challenge_methods_supported: ['S256'],
         scopes_supported: ['claudeai', 'mcp'],
         token_endpoint_auth_methods_supported: ['none']
@@ -287,5 +245,135 @@ export class OAuthServer {
     }
 
     res.redirect(redirectUrl.toString());
+  }
+
+  private async handleAuthorizationCodeGrant(req: any, res: any, params: {
+    code: string;
+    client_id: string;
+    code_verifier?: string;
+    redirect_uri: string;
+  }): Promise<void> {
+    const { code, client_id, code_verifier, redirect_uri } = params;
+
+    const codeData = await this.storage.getAuthCode(code);
+    if (!codeData) {
+      res.status(400).json({ error: 'invalid_grant' });
+      return;
+    }
+
+    if (codeData.clientId !== client_id || codeData.redirectUri !== redirect_uri) {
+      res.status(400).json({ error: 'invalid_client' });
+      return;
+    }
+
+    // Verify PKCE if present
+    if (codeData.codeChallenge && codeData.codeChallengeMethod === 'S256') {
+      const crypto = await import('crypto');
+      const hash = crypto.createHash('sha256').update(code_verifier || '').digest('base64url');
+      if (hash !== codeData.codeChallenge) {
+        res.status(400).json({ error: 'invalid_grant' });
+        return;
+      }
+    }
+
+    // Generate access and refresh tokens
+    const accessToken = randomUUID();
+    const refreshToken = randomUUID();
+    
+    const accessTokenData = {
+      token: accessToken,
+      clientId: client_id,
+      userId: codeData.userId,
+      scope: codeData.scope,
+      expiresAt: Date.now() + 3600000 // 1 hour
+    };
+
+    const refreshTokenData = {
+      token: refreshToken,
+      clientId: client_id,
+      userId: codeData.userId,
+      scope: codeData.scope,
+      expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days
+    };
+
+    await this.storage.setAccessToken(accessToken, accessTokenData);
+    await this.storage.setRefreshToken(refreshToken, refreshTokenData);
+    await this.storage.deleteAuthCode(code);
+
+    logger.info('Access and refresh tokens issued', {
+      client_id: client_id,
+      userId: anonymizeKey(codeData.userId),
+      scope: codeData.scope,
+      access_expires_in: 3600,
+      refresh_expires_in: 7 * 24 * 60 * 60
+    });
+
+    res.json({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      token_type: 'Bearer',
+      expires_in: 3600,
+      scope: codeData.scope
+    });
+  }
+
+  private async handleRefreshTokenGrant(req: any, res: any, params: {
+    refresh_token: string;
+    client_id: string;
+  }): Promise<void> {
+    const { refresh_token, client_id } = params;
+
+    const refreshData = await this.storage.getRefreshToken(refresh_token);
+    if (!refreshData) {
+      res.status(400).json({ error: 'invalid_grant' });
+      return;
+    }
+
+    if (refreshData.clientId !== client_id) {
+      res.status(400).json({ error: 'invalid_client' });
+      return;
+    }
+
+    // Generate new access token (and optionally rotate refresh token)
+    const newAccessToken = randomUUID();
+    const newRefreshToken = randomUUID();
+
+    const accessTokenData = {
+      token: newAccessToken,
+      clientId: client_id,
+      userId: refreshData.userId,
+      scope: refreshData.scope,
+      expiresAt: Date.now() + 3600000 // 1 hour
+    };
+
+    const newRefreshTokenData = {
+      token: newRefreshToken,
+      clientId: client_id,
+      userId: refreshData.userId,
+      scope: refreshData.scope,
+      expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days
+    };
+
+    await this.storage.setAccessToken(newAccessToken, accessTokenData);
+    await this.storage.setRefreshToken(newRefreshToken, newRefreshTokenData);
+    
+    // Rotate the refresh token (delete old one)
+    await this.storage.deleteRefreshToken(refresh_token);
+
+    logger.info('Token refreshed', {
+      client_id: client_id,
+      userId: anonymizeKey(refreshData.userId),
+      scope: refreshData.scope,
+      access_expires_in: 3600,
+      refresh_expires_in: 7 * 24 * 60 * 60
+    });
+
+    res.json({
+      access_token: newAccessToken,
+      refresh_token: newRefreshToken,
+      token_type: 'Bearer',
+      expires_in: 3600,
+      scope: refreshData.scope
+    });
   }
 }

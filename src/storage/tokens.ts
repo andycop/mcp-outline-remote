@@ -17,6 +17,14 @@ interface AccessTokenData {
   expiresAt: number;
 }
 
+interface RefreshTokenData {
+  token: string;
+  clientId: string;
+  userId: string;
+  scope: string;
+  expiresAt: number;
+}
+
 export interface TokenStorage {
   setAuthCode(code: string, data: AuthCodeData): Promise<void>;
   getAuthCode(code: string): Promise<AuthCodeData | null>;
@@ -24,11 +32,15 @@ export interface TokenStorage {
   setAccessToken(token: string, data: AccessTokenData): Promise<void>;
   getAccessToken(token: string): Promise<AccessTokenData | null>;
   deleteAccessToken(token: string): Promise<void>;
+  setRefreshToken(token: string, data: RefreshTokenData): Promise<void>;
+  getRefreshToken(token: string): Promise<RefreshTokenData | null>;
+  deleteRefreshToken(token: string): Promise<void>;
 }
 
 class InMemoryTokenStorage implements TokenStorage {
   private authCodes = new Map<string, AuthCodeData>();
   private accessTokens = new Map<string, AccessTokenData>();
+  private refreshTokens = new Map<string, RefreshTokenData>();
 
   async setAuthCode(code: string, data: AuthCodeData): Promise<void> {
     this.authCodes.set(code, data);
@@ -67,6 +79,25 @@ class InMemoryTokenStorage implements TokenStorage {
   async deleteAccessToken(token: string): Promise<void> {
     this.accessTokens.delete(token);
   }
+
+  async setRefreshToken(token: string, data: RefreshTokenData): Promise<void> {
+    this.refreshTokens.set(token, data);
+  }
+
+  async getRefreshToken(token: string): Promise<RefreshTokenData | null> {
+    const data = this.refreshTokens.get(token);
+    if (!data || data.expiresAt < Date.now()) {
+      if (data) {
+        this.refreshTokens.delete(token);
+      }
+      return null;
+    }
+    return data;
+  }
+
+  async deleteRefreshToken(token: string): Promise<void> {
+    this.refreshTokens.delete(token);
+  }
 }
 
 class RedisTokenStorage implements TokenStorage {
@@ -104,6 +135,20 @@ class RedisTokenStorage implements TokenStorage {
 
   async deleteAccessToken(token: string): Promise<void> {
     await this.redis.del(`access_token:${token}`);
+  }
+
+  async setRefreshToken(token: string, data: RefreshTokenData): Promise<void> {
+    const ttl = Math.max(1, Math.floor((data.expiresAt - Date.now()) / 1000));
+    await this.redis.setex(`refresh_token:${token}`, ttl, JSON.stringify(data));
+  }
+
+  async getRefreshToken(token: string): Promise<RefreshTokenData | null> {
+    const data = await this.redis.get(`refresh_token:${token}`);
+    return data ? JSON.parse(data) : null;
+  }
+
+  async deleteRefreshToken(token: string): Promise<void> {
+    await this.redis.del(`refresh_token:${token}`);
   }
 }
 
