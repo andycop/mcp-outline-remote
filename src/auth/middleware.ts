@@ -18,7 +18,27 @@ export class AuthMiddleware {
       try {
         const tokenData = await this.storage.getAccessToken(token);
         if (!tokenData) {
-          throw new Error('Token not found');
+          logger.warn('Bearer token not found or expired', {
+            token: anonymizeKey(token)
+          });
+          res.status(401).json({ 
+            error: 'invalid_token',
+            error_description: 'The access token provided is expired, revoked, malformed, or invalid'
+          });
+          return;
+        }
+        
+        // Check if token is expired
+        if (tokenData.expiresAt < Date.now()) {
+          logger.warn('Bearer token expired', {
+            token: anonymizeKey(token),
+            expiresAt: new Date(tokenData.expiresAt).toISOString()
+          });
+          res.status(401).json({ 
+            error: 'invalid_token',
+            error_description: 'The access token has expired'
+          });
+          return;
         }
         
         // For MCP clients, we'll set a minimal user object
@@ -40,7 +60,10 @@ export class AuthMiddleware {
           token: anonymizeKey(token),
           error: error instanceof Error ? error.message : 'Unknown error'
         });
-        res.status(401).json({ error: 'Invalid or expired token' });
+        res.status(401).json({ 
+          error: 'invalid_token',
+          error_description: 'Token validation failed'
+        });
         return;
       }
     }
