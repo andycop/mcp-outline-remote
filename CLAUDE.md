@@ -91,6 +91,7 @@ All tools migrated from the Fellow Outline MCP server with enhanced security:
 # Microsoft OAuth
 MS_CLIENT_ID=your-azure-client-id
 MS_CLIENT_SECRET=your-azure-client-secret
+MS_TENANT=your-app-tenant-id
 SESSION_SECRET=your-super-long-random-secret-key
 REDIRECT_URI=https://your-domain.com/auth/callback
 
@@ -101,7 +102,6 @@ OUTLINE_API_TOKEN=your-outline-api-token
 
 ### Optional Variables
 ```env
-MS_TENANT=common                      # or specific tenant ID
 REDIS_URL=redis://localhost:6379      # enables Redis storage
 PORT=3131
 NODE_ENV=development
