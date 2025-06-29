@@ -153,3 +153,32 @@ npm start        # Production mode
 5. Monitor logs for security events
 
 The v2 server is production-ready with comprehensive security, OAuth authentication, and all Outline API functionality from the original Fellow implementation.
+
+## What To Work On Next
+
+### 🔧 **Tool Optimizations** (Next Priority)
+1. **LLM-optimized tool responses** - Enhance tool outputs for better Claude.ai integration
+2. **Response formatting** - Improve data structure and readability for AI consumption  
+3. **Tool efficiency** - Reduce API calls and optimize performance
+4. **Enhanced error messages** - More descriptive and actionable error responses
+5. **Result summarization** - Add intelligent summarization for large result sets
+
+### 🚀 **Future Improvements**
+1. **Error handling** - More robust error boundaries and user feedback
+2. **Rate limiting** - Add request rate limiting for security
+3. **Monitoring** - Add metrics/health checks for production
+4. **Testing framework** - Add proper unit/integration tests
+
+## Session Summary (2025-06-29)
+
+### ✅ **Major Accomplishments**
+- **OAuth 2.0 Refresh Token Implementation** - Added complete refresh token support
+- **Session Persistence** - Fixed Claude.ai timeout issues with automatic token refresh
+- **Production Docker Setup** - Redis persistence, health checks, reboot script
+- **Documentation Updates** - Fixed MS_TENANT requirements, added comprehensive guides
+
+### 🔬 **Technical Details**
+- **Token Lifetimes**: Access tokens (1 hour), Refresh tokens (7 days with rotation)
+- **Storage**: Redis persistent storage with in-memory fallback
+- **Security**: Proper OAuth 2.0 error codes, token rotation, anonymized logging
+- **Development**: Added `./reboot.sh` script for easy container rebuilds
