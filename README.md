@@ -92,6 +92,7 @@ Choose your deployment method:
    # Required - Microsoft OAuth
    MS_CLIENT_ID=your-azure-client-id
    MS_CLIENT_SECRET=your-azure-client-secret
+   MS_TENANT=your-app-tenant-id
    SESSION_SECRET=your-random-session-secret
    REDIRECT_URI=https://your-domain.com/auth/callback
    
@@ -100,7 +101,6 @@ Choose your deployment method:
    OUTLINE_API_TOKEN=your-outline-api-token
    
    # Optional
-   MS_TENANT=common
    REDIS_URL=redis://localhost:6379
    PORT=3131
    ```
@@ -132,6 +132,7 @@ The easiest way to deploy this server is using Docker Compose with automatic Red
    # Microsoft OAuth - REQUIRED
    MS_CLIENT_ID=your-azure-client-id
    MS_CLIENT_SECRET=your-azure-client-secret
+   MS_TENANT=your-app-tenant-id
    SESSION_SECRET=your-super-long-random-secret-key
    REDIRECT_URI=https://your-domain.com/auth/callback
 
@@ -140,7 +141,6 @@ The easiest way to deploy this server is using Docker Compose with automatic Red
    OUTLINE_API_TOKEN=your-outline-api-token
 
    # Optional
-   MS_TENANT=common
    NODE_ENV=production
    ```
 
