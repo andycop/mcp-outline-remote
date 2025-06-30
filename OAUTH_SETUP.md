@@ -1,14 +1,16 @@
-# MCP Server with MS365 OAuth
+# MCP Server OAuth Configuration
 
-This MCP server now includes MS365 OAuth authentication using the latest StreamableHTTP transport.
+This MCP server features dual OAuth 2.0 authentication with Microsoft Azure and Outline for comprehensive user authentication.
 
 ## Features
 
-- **MS365 OAuth Integration**: Uses Azure Active Directory for authentication
-- **StreamableHTTP Transport**: Latest MCP SDK transport (replaces SSE)
-- **Session-based Authentication**: Simple cookie-based sessions
+- **Microsoft Azure OAuth**: Primary authentication using Azure Active Directory
+- **Outline OAuth Integration**: Per-user Outline account authentication
+- **StreamableHTTP Transport**: Latest MCP SDK transport for remote connections
+- **Session-based Authentication**: Secure cookie-based sessions with automatic refresh
 - **Protected Endpoints**: All MCP endpoints require authentication
-- **Clean UI**: Simple web interface for login/logout
+- **Per-User Context**: Each user accesses their own Outline workspace
+- **Clean UI**: Simple web interface for login/logout with OAuth status
 
 ## Setup
 
@@ -22,16 +24,40 @@ This MCP server now includes MS365 OAuth authentication using the latest Streama
 6. Go to "Certificates & secrets" → Create new client secret
 7. Copy the **client secret value**
 
-### 2. Configure Environment
+### 2. Set Up Outline OAuth (Recommended)
 
-Create `.env` file:
+For per-user authentication, configure Outline OAuth:
+
+1. **Access your Outline instance as an administrator**
+2. **Navigate to Settings → API**  
+3. **Click "Create Application"**
+4. **Configure the application:**
+   - **Name**: `MCP Server OAuth`
+   - **Redirect URI**: `https://your-domain.com/auth/outline/callback`
+   - **Scopes**: Select all available scopes for full functionality
+5. **Copy the Client ID and Client Secret**
+
+See [OUTLINE_OAUTH_SETUP.md](./OUTLINE_OAUTH_SETUP.md) for detailed instructions.
+
+### 3. Configure Environment
+
+Create `.env` file with both OAuth configurations:
 
 ```bash
-# MS365 OAuth Configuration
+# Microsoft OAuth Configuration (Primary Authentication)
 MS_CLIENT_ID=your-application-client-id
 MS_CLIENT_SECRET=your-client-secret-value
-MS_TENANT=common
+MS_TENANT=your-app-tenant-id
 REDIRECT_URI=https://your-domain.com/auth/callback
+
+# Outline OAuth Configuration (Recommended - Per-User Authentication)
+OUTLINE_OAUTH_CLIENT_ID=your-outline-oauth-client-id
+OUTLINE_OAUTH_CLIENT_SECRET=your-outline-oauth-client-secret
+OUTLINE_OAUTH_REDIRECT_URI=https://your-domain.com/auth/outline/callback
+OUTLINE_API_URL=https://your-outline-instance.com/api
+
+# Legacy Outline API Token (Fallback - Shared Authentication)
+# OUTLINE_API_TOKEN=your-outline-api-token
 
 # Session Configuration (generate a long random string)
 SESSION_SECRET=your-super-long-random-secret-key
@@ -60,20 +86,40 @@ npm start
 |----------|------------|-------------|
 | `/` | Public | Landing page with auth status |
 | `/health` | Public | Health check with auth status |
-| `/login` | Public | Initiates OAuth flow |
-| `/auth/callback` | Public | OAuth callback handler |
+| `/login` | Public | Initiates Microsoft OAuth flow |
+| `/auth/callback` | Public | Microsoft OAuth callback handler |
 | `/logout` | Public | Destroys session |
 | `/status` | Protected | User info and server status |
+| `/auth/outline/status` | Protected | Outline OAuth connection status |
+| `/auth/outline/connect` | Protected | Initiates Outline OAuth flow |
+| `/auth/outline/callback` | Protected | Outline OAuth callback handler |
+| `/auth/outline/disconnect` | Protected | Disconnects user's Outline account |
 | `/v1/mcp` | Protected | MCP StreamableHTTP endpoint |
 
-## Authentication Flow
+## Dual Authentication Flow
 
+### Phase 1: Microsoft Azure Authentication (Required)
 1. User visits `/` → redirected to `/login` if not authenticated
 2. `/login` → redirects to Microsoft login
 3. User authenticates with MS365
 4. Microsoft redirects to `/auth/callback` with auth code
 5. Server exchanges code for tokens, stores user in session
-6. User can now access protected `/v1/mcp` endpoint
+6. User gains access to the MCP server interface
+
+### Phase 2: Outline Authentication (Per-User)
+1. Authenticated user visits `/auth/outline/status` to check Outline connection
+2. If not connected, user clicks "Connect to Outline" 
+3. User is redirected to their Outline instance OAuth authorization
+4. User grants permissions to the MCP server
+5. Outline redirects to `/auth/outline/callback` with auth code
+6. Server exchanges code for Outline tokens, stores per-user
+7. User can now access MCP tools with their personal Outline account
+
+### Token Management
+- **Microsoft tokens**: Used for MCP server access authentication
+- **Outline tokens**: Used for individual API calls, stored per-user
+- **Automatic refresh**: Both token types refresh automatically
+- **Persistence**: Tokens persist in Redis (or in-memory) across server restarts
 
 ## MCP Client Configuration
 

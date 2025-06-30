@@ -7,7 +7,9 @@ A secure, production-ready Model Context Protocol (MCP) server that provides too
 ## Features
 
 ### v2 Enhancements ✨
-- **🔐 OAuth 2.0 Authentication** - Microsoft Azure/MS365 integration with PKCE support
+- **🔐 Dual OAuth 2.0 Authentication** - Microsoft Azure/MS365 + Outline OAuth per-user authentication
+- **👤 Per-User Authentication** - Each user connects with their own Outline account via OAuth
+- **🔄 Token Management** - Automatic refresh tokens with 7-day rotation for persistent sessions
 - **🐳 Docker Deployment** - Complete containerized setup with Docker Compose and Redis
 - **🛡️ Enhanced Security** - Comprehensive logging anonymization, security headers, session management
 - **🏗️ Modular Architecture** - Clean separation of concerns for maintainability
@@ -67,7 +69,7 @@ Choose your deployment method:
 - **For Docker**: Docker and Docker Compose
 - **For Manual**: Node.js 18+, npm/yarn, optional Redis
 - **For Both**: Microsoft Azure application registration ([Setup guide](./OAUTH_SETUP.md))
-- **For Both**: Outline API token ([Get one here](https://www.getoutline.com/developers))
+- **For Both**: Outline OAuth application OR API token ([Setup guide](./OUTLINE_OAUTH_SETUP.md))
 
 ### Manual Installation
 
@@ -96,8 +98,15 @@ Choose your deployment method:
    SESSION_SECRET=your-random-session-secret
    REDIRECT_URI=https://your-domain.com/auth/callback
    
-   # Required - Outline API
+   # Required - Outline Configuration
    OUTLINE_API_URL=https://your-outline-instance.com/api
+   
+   # Option 1: Outline OAuth (Recommended - per-user authentication)
+   OUTLINE_OAUTH_CLIENT_ID=your-outline-oauth-client-id
+   OUTLINE_OAUTH_CLIENT_SECRET=your-outline-oauth-client-secret
+   OUTLINE_OAUTH_REDIRECT_URI=https://your-domain.com/auth/outline/callback
+   
+   # Option 2: Legacy API Token (shared across all users)
    OUTLINE_API_TOKEN=your-outline-api-token
    
    # Optional
@@ -136,8 +145,15 @@ The easiest way to deploy this server is using Docker Compose with automatic Red
    SESSION_SECRET=your-super-long-random-secret-key
    REDIRECT_URI=https://your-domain.com/auth/callback
 
-   # Outline API - REQUIRED  
+   # Outline Configuration - REQUIRED  
    OUTLINE_API_URL=https://your-outline-instance.com/api
+   
+   # Option 1: Outline OAuth (Recommended)
+   OUTLINE_OAUTH_CLIENT_ID=your-outline-oauth-client-id
+   OUTLINE_OAUTH_CLIENT_SECRET=your-outline-oauth-client-secret
+   OUTLINE_OAUTH_REDIRECT_URI=https://your-domain.com/auth/outline/callback
+   
+   # Option 2: Legacy API Token (fallback)
    OUTLINE_API_TOKEN=your-outline-api-token
 
    # Optional
@@ -274,7 +290,14 @@ The server will be available at:
 | `SESSION_SECRET` | Random session secret key |
 | `REDIRECT_URI` | OAuth redirect URI |
 | `OUTLINE_API_URL` | Outline API base URL |
-| `OUTLINE_API_TOKEN` | Your Outline API token |
+
+### Outline Authentication (Choose One)
+| Variable | Description |
+|----------|-------------|
+| `OUTLINE_OAUTH_CLIENT_ID` | **Recommended**: Outline OAuth client ID for per-user auth |
+| `OUTLINE_OAUTH_CLIENT_SECRET` | **Recommended**: Outline OAuth client secret |
+| `OUTLINE_OAUTH_REDIRECT_URI` | **Recommended**: Outline OAuth redirect URI |
+| `OUTLINE_API_TOKEN` | **Legacy**: Shared API token (all users act as token owner) |
 
 ### Optional Variables
 | Variable | Default | Description |
@@ -390,14 +413,18 @@ CLAUDE.md            # Project development instructions and context
 ### v2 Architecture
 - **Transport**: SSE (Server-Sent Events) over HTTP
 - **Framework**: @modelcontextprotocol/sdk with Express.js
-- **Authentication**: OAuth 2.0 with Microsoft Azure/MS365
+- **Authentication**: Dual OAuth 2.0 (Microsoft Azure + Outline per-user)
+- **User Context**: Per-user Outline authentication with automatic token refresh
 - **Security**: Helmet.js security headers, session management, logging anonymization
-- **Storage**: Optional Redis with in-memory fallback
+- **Storage**: Optional Redis with in-memory fallback for token persistence
 - **Language**: TypeScript with ES modules
-- **API Client**: Axios for Outline API requests
+- **API Client**: User-specific Axios instances for Outline API requests
 - **Configuration**: dotenv for environment management
 
 ### Security Features
+- **Per-User Authentication** - Each user uses their own Outline account credentials
+- **Token Isolation** - User tokens are stored separately and never shared
+- **Automatic Refresh** - OAuth tokens refresh automatically without user intervention
 - **Key Anonymization** - All sensitive data in logs is automatically masked
 - **Environment Validation** - Fails fast on missing required configuration
 - **Secure Sessions** - HTTP-only cookies with CSRF protection

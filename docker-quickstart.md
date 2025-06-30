@@ -2,8 +2,8 @@
 
 ## Prerequisites
 - Docker and Docker Compose installed
-- Microsoft Azure OAuth app configured
-- Outline API token
+- Microsoft Azure OAuth app configured ([Setup guide](./OAUTH_SETUP.md))
+- Outline OAuth app configured OR Outline API token ([Setup guide](./OUTLINE_OAUTH_SETUP.md))
 
 ## Quick Setup
 
@@ -17,13 +17,21 @@ Edit `.env` with your actual values:
 ```bash
 # Microsoft OAuth - REQUIRED
 MS_CLIENT_ID=your-azure-client-id
-MS_CLIENT_SECRET=your-azure-client-secret  
+MS_CLIENT_SECRET=your-azure-client-secret
+MS_TENANT=your-app-tenant-id
 SESSION_SECRET=your-super-long-random-secret-key
 REDIRECT_URI=https://your-domain.com/auth/callback
 
-# Outline API - REQUIRED
+# Outline Configuration - REQUIRED
 OUTLINE_API_URL=https://your-outline-instance.com/api
-OUTLINE_API_TOKEN=your-outline-api-token
+
+# Option 1: Outline OAuth (Recommended - Per-User Authentication)
+OUTLINE_OAUTH_CLIENT_ID=your-outline-oauth-client-id
+OUTLINE_OAUTH_CLIENT_SECRET=your-outline-oauth-client-secret
+OUTLINE_OAUTH_REDIRECT_URI=https://your-domain.com/auth/outline/callback
+
+# Option 2: Legacy API Token (Shared Authentication - Fallback)
+# OUTLINE_API_TOKEN=your-outline-api-token
 ```
 
 ### 3. Launch Services
@@ -45,9 +53,20 @@ curl http://localhost:3131/health
 
 ## Service Access
 
+### Primary Endpoints
 - **Application**: http://localhost:3131
 - **Health Check**: http://localhost:3131/health  
 - **MCP Endpoint**: http://localhost:3131/v1/mcp (requires auth)
+
+### Authentication Flow
+1. **Microsoft Login**: Visit http://localhost:3131 → Login with MS365
+2. **Outline Connection**: Visit `/auth/outline/status` → Connect your Outline account
+3. **MCP Access**: Use MCP tools with your personal Outline workspace
+
+### OAuth Status Endpoints
+- **Server Status**: http://localhost:3131/status (authenticated users)
+- **Outline Status**: http://localhost:3131/auth/outline/status (Outline OAuth info)
+- **Outline Connect**: http://localhost:3131/auth/outline/connect (start Outline OAuth)
 
 ## Management Commands
 
