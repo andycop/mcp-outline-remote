@@ -205,14 +205,84 @@ async function startServer() {
     res.redirect(outlineAuthUrl);
   });
 
-  // Token endpoint for Claude.ai
+  // Token endpoint for Claude.ai (both initial and refresh)
   app.post('/token', async (req, res) => {
-    const { grant_type, code, redirect_uri, client_id, code_verifier } = req.body;
+    const { grant_type, code, redirect_uri, client_id, code_verifier, refresh_token } = req.body;
+    
+    // Handle refresh token requests
+    if (grant_type === 'refresh_token') {
+      if (!refresh_token) {
+        res.status(400).json({
+          error: 'invalid_request',
+          error_description: 'Refresh token is required for refresh_token grant type'
+        });
+        return;
+      }
+      
+      // Validate the refresh token
+      const refreshTokenData = await services.tokenStorage.getRefreshToken(refresh_token);
+      if (!refreshTokenData) {
+        res.status(400).json({
+          error: 'invalid_grant',
+          error_description: 'Refresh token is invalid or expired'
+        });
+        return;
+      }
+      
+      // Check if refresh token is expired
+      if (refreshTokenData.expiresAt < Date.now()) {
+        res.status(400).json({
+          error: 'invalid_grant',
+          error_description: 'Refresh token has expired'
+        });
+        return;
+      }
+      
+      // Generate new tokens
+      const newAccessToken = `outline_access_${Date.now()}_${Math.random().toString(36).substr(2, 16)}`;
+      const newRefreshToken = `outline_refresh_${Date.now()}_${Math.random().toString(36).substr(2, 16)}`;
+      const expiresIn = 24 * 60 * 60; // 24 hours
+      const refreshExpiresIn = 7 * 24 * 60 * 60; // 7 days
+      
+      // Store new access token
+      await services.tokenStorage.setAccessToken(newAccessToken, {
+        token: newAccessToken,
+        userId: refreshTokenData.userId,
+        clientId: refreshTokenData.clientId,
+        scope: refreshTokenData.scope,
+        expiresAt: Date.now() + (expiresIn * 1000)
+      });
+      
+      // Store new refresh token
+      await services.tokenStorage.setRefreshToken(newRefreshToken, {
+        token: newRefreshToken,
+        userId: refreshTokenData.userId,
+        clientId: refreshTokenData.clientId,
+        scope: refreshTokenData.scope,
+        expiresAt: Date.now() + (refreshExpiresIn * 1000)
+      });
+      
+      // Clean up old refresh token
+      await services.tokenStorage.deleteRefreshToken(refresh_token);
+      
+      logger.info('Token refreshed successfully for Claude.ai client', { 
+        userId: refreshTokenData.userId,
+        client_id: refreshTokenData.clientId 
+      });
+      
+      res.json({
+        access_token: newAccessToken,
+        refresh_token: newRefreshToken,
+        token_type: 'Bearer',
+        expires_in: expiresIn
+      });
+      return;
+    }
     
     if (grant_type !== 'authorization_code') {
       res.status(400).json({
         error: 'unsupported_grant_type',
-        error_description: 'Only authorization_code grant type is supported'
+        error_description: 'Only authorization_code and refresh_token grant types are supported'
       });
       return;
     }
@@ -236,18 +306,26 @@ async function startServer() {
       });
     }
     
-    // Generate access token
+    // Generate access token with longer lifetime for persistent sessions
     const accessToken = `outline_access_${Date.now()}_${Math.random().toString(36).substr(2, 16)}`;
     const refreshToken = `outline_refresh_${Date.now()}_${Math.random().toString(36).substr(2, 16)}`;
-    const expiresIn = 3600; // 1 hour
+    const expiresIn = 24 * 60 * 60; // 24 hours (much longer for MCP clients)
     
-    // Store token in our storage
+    // Store both access and refresh tokens in our storage
     await services.tokenStorage.setAccessToken(accessToken, {
       token: accessToken,
       userId: authCodeData.userId,
       clientId: client_id as string,
       scope: authCodeData.scope as string,
       expiresAt: Date.now() + (expiresIn * 1000)
+    });
+    
+    await services.tokenStorage.setRefreshToken(refreshToken, {
+      token: refreshToken,
+      userId: authCodeData.userId,
+      clientId: client_id as string,
+      scope: authCodeData.scope as string,
+      expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000) // 7 days
     });
     
     // Clean up auth code (one-time use)

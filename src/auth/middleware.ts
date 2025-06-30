@@ -20,8 +20,39 @@ export class AuthMiddleware {
         const tokenData = await this.storage.getAccessToken(accessToken);
         
         if (tokenData) {
+          // Check if Claude.ai token is expired
+          if (tokenData.expiresAt < Date.now()) {
+            logger.warn('Claude.ai access token expired, requiring re-authentication', {
+              userId: tokenData.userId,
+              expiresAt: new Date(tokenData.expiresAt).toISOString()
+            });
+            res.status(401).json({
+              error: 'invalid_token',
+              error_description: 'Access token has expired. Please reconnect your Outline account.'
+            });
+            return;
+          }
+          
           // Get user's Outline tokens using the userId from the access token
           const outlineTokens = await this.storage.getOutlineTokens(tokenData.userId);
+          
+          // Verify Outline tokens are still valid (and refresh if needed)
+          if (outlineTokens && this.outlineOAuthService) {
+            try {
+              // This will automatically refresh if needed
+              await this.outlineOAuthService.getValidAccessToken(tokenData.userId);
+            } catch (error) {
+              logger.warn('Outline token refresh failed, requiring re-authentication', {
+                userId: tokenData.userId,
+                error: error instanceof Error ? error.message : String(error)
+              });
+              res.status(401).json({
+                error: 'outline_auth_required',
+                error_description: 'Please connect your Outline account first. Visit /auth/outline/connect to authorize.'
+              });
+              return;
+            }
+          }
           
           // Fetch real user info from Outline
           const userInfo = await this.outlineClient.getUserInfo(tokenData.userId);
