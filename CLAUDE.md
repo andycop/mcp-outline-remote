@@ -1,9 +1,9 @@
-# MCP Outline Remote Server v2
+# MCP Outline Remote Server v3
 
 ## Project Overview
-This is version 2 of the remote MCP (Model Context Protocol) server that provides tools for interacting with Outline (document management platform). Version 2 features streamlined Outline OAuth authentication, enhanced security, and production-ready architecture.
+This is version 3 of the remote MCP (Model Context Protocol) server that provides tools for interacting with Outline (document management platform). Version 3 features streamlined Outline OAuth authentication as the primary authentication method, eliminating dual OAuth complexity and providing seamless Claude.ai integration.
 
-## v2 Current Status (2025-06-30)
+## v3 Current Status (2025-06-30)
 - ✅ **COMPLETED**: Migrated to OAuth-enabled mcp-server architecture
 - ✅ **COMPLETED**: All 12 Outline tools implemented with TypeScript
 - ✅ **COMPLETED**: Simplified OAuth 2.0 integration with Outline as primary authentication
@@ -13,12 +13,13 @@ This is version 2 of the remote MCP (Model Context Protocol) server that provide
 - ✅ **COMPLETED**: Production deployment configuration
 - ✅ **COMPLETED**: Direct Outline OAuth integration eliminating dual authentication
 
-## What's New in v2
+## What's New in v3
 
-### 🔐 **Simplified OAuth 2.0 Authentication**
+### 🔐 **Streamlined OAuth 2.0 Authentication**
 - **Direct Outline OAuth integration** - Single authentication step eliminates dual OAuth complexity
 - **Claude.ai seamless flow** - OAuth bridge handles MCP client authentication automatically  
 - **One-time authorization** - Users authorize once, automatic token refresh handles renewals
+- **Eliminated Microsoft OAuth dependency** - Simplified configuration and user experience
 - **Session management** with secure HTTP-only cookies
 - **PKCE security** for enhanced OAuth protection
 
@@ -152,11 +153,18 @@ npm run build    # Build TypeScript to JavaScript
 npm start        # Production mode
 ```
 
-## Migration Notes from v1
+## Migration Notes 
+### v1 → v3
 - **v1**: Simple SSE-based server with basic authentication
-- **v2**: Streamlined Outline OAuth integration, enhanced security, modular architecture
-- **Breaking changes**: Simplified OAuth flow, removed Microsoft OAuth dependency
-- **Backward compatibility**: Same MCP tools, improved authentication and reliability
+- **v3**: Streamlined Outline OAuth integration, enhanced security, modular architecture
+- **Breaking changes**: Complete authentication system overhaul, simplified OAuth flow
+- **Backward compatibility**: Same MCP tools, dramatically improved authentication and reliability
+
+### v2 → v3  
+- **v2**: Dual OAuth (Microsoft + Outline) authentication
+- **v3**: Single Outline OAuth authentication with Claude.ai bridge
+- **Breaking changes**: Removed Microsoft OAuth dependency, simplified environment configuration
+- **Benefits**: Faster user onboarding, reduced authentication complexity, better user experience
 
 ## Production Deployment
 1. Set `NODE_ENV=production`
@@ -165,7 +173,7 @@ npm start        # Production mode
 4. Set secure session configuration
 5. Monitor logs for security events
 
-The v2 server is production-ready with streamlined Outline OAuth, comprehensive security, and all Outline API functionality from the original Fellow implementation.
+The v3 server is production-ready with streamlined Outline OAuth, simplified authentication flow, comprehensive security, and all Outline API functionality from the original Fellow implementation.
 
 ## Important Outline API Notes
 

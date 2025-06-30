@@ -1,16 +1,15 @@
-# MCP Server Architecture v2
+# MCP Server Architecture v3
 
 ## Overview
-This MCP server implements dual OAuth 2.0 authentication with Microsoft Azure and Outline, providing per-user authentication and a comprehensive modular structure for production deployment.
+This MCP server implements streamlined Outline OAuth 2.0 authentication with Claude.ai integration, providing per-user authentication and a comprehensive modular structure for production deployment.
 
 ## Project Structure
 ```
 src/
-├── server.ts              # Main Express application with dual OAuth
+├── server.ts              # Main Express application with Outline OAuth and Claude.ai bridge
 ├── auth/
-│   ├── oauth.ts           # Microsoft OAuth 2.0 authorization server
-│   ├── middleware.ts      # Authentication middleware
-│   ├── outline-oauth.ts   # Outline OAuth 2.0 service
+│   ├── middleware.ts      # Authentication middleware for Bearer tokens and sessions
+│   ├── outline-oauth.ts   # Outline OAuth 2.0 service with PKCE
 │   └── outline-oauth-routes.ts # Outline OAuth route handlers
 ├── mcp/
 │   └── server.ts          # MCP server factory with user context

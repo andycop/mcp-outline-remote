@@ -1,15 +1,17 @@
-# Outline MCP Remote Server v2
+# Outline MCP Remote Server v3
 
-> **Latest Version**: v2.0.0 - Enhanced with OAuth authentication and production security features
+> **Latest Version**: v3.0.0 - Streamlined with simplified Outline OAuth authentication
 
-A secure, production-ready Model Context Protocol (MCP) server that provides tools for interacting with [Outline](https://www.getoutline.com/), a modern wiki and knowledge base platform. This server features Microsoft Azure OAuth authentication, comprehensive security, and Server-Sent Events (SSE) transport for remote connections over HTTP.
+A secure, production-ready Model Context Protocol (MCP) server that provides tools for interacting with [Outline](https://www.getoutline.com/), a modern wiki and knowledge base platform. This server features streamlined Outline OAuth authentication, comprehensive security, and Server-Sent Events (SSE) transport for remote connections over HTTP.
 
 ## Features
 
-### v2 Enhancements ✨
-- **🔐 Dual OAuth 2.0 Authentication** - Microsoft Azure/MS365 + Outline OAuth per-user authentication
+### v3 Enhancements ✨
+- **🔐 Simplified OAuth 2.0 Authentication** - Direct Outline OAuth integration eliminates dual authentication
+- **⚡ One-Click Authorization** - Users authorize once, automatic token refresh handles renewals
+- **🤝 Claude.ai Seamless Integration** - OAuth bridge for transparent MCP client authentication
 - **👤 Per-User Authentication** - Each user connects with their own Outline account via OAuth
-- **🔄 Token Management** - Automatic refresh tokens with 7-day rotation for persistent sessions
+- **🔄 Automatic Token Management** - Smart refresh with 5-minute buffer (access: 1-2h, refresh: weeks-months)
 - **🐳 Docker Deployment** - Complete containerized setup with Docker Compose and Redis
 - **🛡️ Enhanced Security** - Comprehensive logging anonymization, security headers, session management
 - **🏗️ Modular Architecture** - Clean separation of concerns for maintainability
@@ -68,7 +70,6 @@ Choose your deployment method:
 ### Prerequisites
 - **For Docker**: Docker and Docker Compose
 - **For Manual**: Node.js 18+, npm/yarn, optional Redis
-- **For Both**: Microsoft Azure application registration ([Setup guide](./OAUTH_SETUP.md))
 - **For Both**: Outline OAuth application OR API token ([Setup guide](./OUTLINE_OAUTH_SETUP.md))
 
 ### Manual Installation
@@ -91,22 +92,18 @@ Choose your deployment method:
    
    Edit `.env` with your configuration:
    ```env
-   # Required - Microsoft OAuth
-   MS_CLIENT_ID=your-azure-client-id
-   MS_CLIENT_SECRET=your-azure-client-secret
-   MS_TENANT=your-app-tenant-id
+   # Required - Session Configuration
    SESSION_SECRET=your-random-session-secret
-   REDIRECT_URI=https://your-domain.com/auth/callback
    
    # Required - Outline Configuration
    OUTLINE_API_URL=https://your-outline-instance.com/api
    
-   # Option 1: Outline OAuth (Recommended - per-user authentication)
+   # Primary Authentication: Outline OAuth (Recommended)
    OUTLINE_OAUTH_CLIENT_ID=your-outline-oauth-client-id
    OUTLINE_OAUTH_CLIENT_SECRET=your-outline-oauth-client-secret
    OUTLINE_OAUTH_REDIRECT_URI=https://your-domain.com/auth/outline/callback
    
-   # Option 2: Legacy API Token (shared across all users)
+   # Fallback: Legacy API Token (shared across all users)
    OUTLINE_API_TOKEN=your-outline-api-token
    
    # Optional
@@ -138,22 +135,18 @@ The easiest way to deploy this server is using Docker Compose with automatic Red
 
 2. **Configure your credentials in `.env`**
    ```bash
-   # Microsoft OAuth - REQUIRED
-   MS_CLIENT_ID=your-azure-client-id
-   MS_CLIENT_SECRET=your-azure-client-secret
-   MS_TENANT=your-app-tenant-id
+   # Session Configuration - REQUIRED
    SESSION_SECRET=your-super-long-random-secret-key
-   REDIRECT_URI=https://your-domain.com/auth/callback
 
    # Outline Configuration - REQUIRED  
    OUTLINE_API_URL=https://your-outline-instance.com/api
    
-   # Option 1: Outline OAuth (Recommended)
+   # Primary Authentication: Outline OAuth (Recommended)
    OUTLINE_OAUTH_CLIENT_ID=your-outline-oauth-client-id
    OUTLINE_OAUTH_CLIENT_SECRET=your-outline-oauth-client-secret
    OUTLINE_OAUTH_REDIRECT_URI=https://your-domain.com/auth/outline/callback
    
-   # Option 2: Legacy API Token (fallback)
+   # Fallback: Legacy API Token (shared authentication)
    OUTLINE_API_TOKEN=your-outline-api-token
 
    # Optional
@@ -250,11 +243,12 @@ See [docker-quickstart.md](./docker-quickstart.md) for complete Docker documenta
 
 #### Browser Access
 1. Navigate to `http://localhost:3131`
-2. Click "Login with MS365"
-3. Complete Microsoft authentication
-4. Access protected endpoints
+2. Click "Connect to Outline" 
+3. Complete Outline OAuth authentication
+4. Access MCP tools seamlessly
 
-#### MCP Client Integration
+#### Claude.ai MCP Integration
+Add the server in Claude.ai:
 ```json
 {
   "mcpServers": {
@@ -262,17 +256,21 @@ See [docker-quickstart.md](./docker-quickstart.md) for complete Docker documenta
       "command": "node",
       "args": ["/path/to/mcp-outline-remote/dist/server.js"],
       "env": {
-        "MS_CLIENT_ID": "your-client-id",
-        "MS_CLIENT_SECRET": "your-client-secret",
         "SESSION_SECRET": "your-session-secret",
-        "REDIRECT_URI": "https://your-domain.com/auth/callback",
         "OUTLINE_API_URL": "https://your-outline-instance.com/api",
-        "OUTLINE_API_TOKEN": "your-outline-api-token"
+        "OUTLINE_OAUTH_CLIENT_ID": "your-outline-oauth-client-id",
+        "OUTLINE_OAUTH_CLIENT_SECRET": "your-outline-oauth-client-secret",
+        "OUTLINE_OAUTH_REDIRECT_URI": "https://your-domain.com/auth/outline/callback"
       }
     }
   }
 }
 ```
+
+**Authentication Flow:**
+1. Add MCP server in Claude.ai (seamless)
+2. First tool use triggers one-time Outline OAuth authorization
+3. All subsequent tool usage works automatically with token refresh
 
 The server will be available at:
 - **Landing Page**: `http://localhost:3131`
@@ -285,24 +283,20 @@ The server will be available at:
 ### Required Variables
 | Variable | Description |
 |----------|-------------|
-| `MS_CLIENT_ID` | Microsoft Azure client ID |
-| `MS_CLIENT_SECRET` | Microsoft Azure client secret |
 | `SESSION_SECRET` | Random session secret key |
-| `REDIRECT_URI` | OAuth redirect URI |
 | `OUTLINE_API_URL` | Outline API base URL |
 
 ### Outline Authentication (Choose One)
 | Variable | Description |
 |----------|-------------|
-| `OUTLINE_OAUTH_CLIENT_ID` | **Recommended**: Outline OAuth client ID for per-user auth |
-| `OUTLINE_OAUTH_CLIENT_SECRET` | **Recommended**: Outline OAuth client secret |
-| `OUTLINE_OAUTH_REDIRECT_URI` | **Recommended**: Outline OAuth redirect URI |
-| `OUTLINE_API_TOKEN` | **Legacy**: Shared API token (all users act as token owner) |
+| `OUTLINE_OAUTH_CLIENT_ID` | **Primary**: Outline OAuth client ID for per-user auth |
+| `OUTLINE_OAUTH_CLIENT_SECRET` | **Primary**: Outline OAuth client secret |
+| `OUTLINE_OAUTH_REDIRECT_URI` | **Primary**: Outline OAuth redirect URI |
+| `OUTLINE_API_TOKEN` | **Fallback**: Shared API token (all users act as token owner) |
 
 ### Optional Variables
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MS_TENANT` | `common` | Microsoft tenant ID or "common" |
 | `REDIS_URL` | - | Redis connection URL for production |
 | `PORT` | `3131` | Server port |
 | `NODE_ENV` | `development` | Environment mode |
@@ -410,10 +404,11 @@ CLAUDE.md            # Project development instructions and context
 
 ## Architecture
 
-### v2 Architecture
+### v3 Architecture
 - **Transport**: SSE (Server-Sent Events) over HTTP
 - **Framework**: @modelcontextprotocol/sdk with Express.js
-- **Authentication**: Dual OAuth 2.0 (Microsoft Azure + Outline per-user)
+- **Authentication**: Streamlined Outline OAuth 2.0 (single authentication step)
+- **OAuth Bridge**: `/authorize` and `/token` endpoints for Claude.ai integration
 - **User Context**: Per-user Outline authentication with automatic token refresh
 - **Security**: Helmet.js security headers, session management, logging anonymization
 - **Storage**: Optional Redis with in-memory fallback for token persistence
@@ -422,9 +417,10 @@ CLAUDE.md            # Project development instructions and context
 - **Configuration**: dotenv for environment management
 
 ### Security Features
+- **Simplified Authentication** - Direct Outline OAuth eliminates dual authentication complexity
 - **Per-User Authentication** - Each user uses their own Outline account credentials
 - **Token Isolation** - User tokens are stored separately and never shared
-- **Automatic Refresh** - OAuth tokens refresh automatically without user intervention
+- **Automatic Refresh** - OAuth tokens refresh automatically with 5-minute buffer
 - **Key Anonymization** - All sensitive data in logs is automatically masked
 - **Environment Validation** - Fails fast on missing required configuration
 - **Secure Sessions** - HTTP-only cookies with CSRF protection

@@ -1,13 +1,13 @@
-# MCP Server OAuth Configuration
+# MCP Server OAuth Configuration (v3)
 
-This MCP server features dual OAuth 2.0 authentication with Microsoft Azure and Outline for comprehensive user authentication.
+This MCP server features streamlined Outline OAuth 2.0 authentication with Claude.ai integration for seamless user experience.
 
 ## Features
 
-- **Microsoft Azure OAuth**: Primary authentication using Azure Active Directory
-- **Outline OAuth Integration**: Per-user Outline account authentication
+- **Outline OAuth**: Primary authentication using Outline workspace credentials
+- **Claude.ai Integration**: OAuth bridge for transparent MCP client authentication
 - **StreamableHTTP Transport**: Latest MCP SDK transport for remote connections
-- **Session-based Authentication**: Secure cookie-based sessions with automatic refresh
+- **Automatic Token Management**: Smart refresh with persistent authentication
 - **Protected Endpoints**: All MCP endpoints require authentication
 - **Per-User Context**: Each user accesses their own Outline workspace
 - **Clean UI**: Simple web interface for login/logout with OAuth status
