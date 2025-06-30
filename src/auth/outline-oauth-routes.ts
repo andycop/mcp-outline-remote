@@ -143,7 +143,39 @@ export function createOutlineOAuthRoutes(oauthService: OutlineOAuthService): Rou
         hasRefreshToken: !!tokens.refreshToken
       });
 
-      // Redirect to original URL or default success page
+      // Check if this was part of a Claude.ai auth flow
+      const claudeAuthRequest = req.session?.claudeAuthRequest;
+      if (claudeAuthRequest) {
+        // Complete the Claude.ai OAuth flow
+        const authCode = `auth_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Store auth request for token exchange
+        req.session.authRequest = {
+          client_id: claudeAuthRequest.client_id,
+          redirect_uri: claudeAuthRequest.redirect_uri,
+          scope: claudeAuthRequest.scope,
+          state: claudeAuthRequest.state,
+          code_challenge: claudeAuthRequest.code_challenge,
+          code_challenge_method: claudeAuthRequest.code_challenge_method,
+          authCode,
+          userId
+        };
+        
+        // Redirect back to Claude.ai
+        const callbackUrl = `${claudeAuthRequest.redirect_uri}?code=${authCode}&state=${claudeAuthRequest.state}`;
+        logger.info('Outline OAuth completed, redirecting to Claude.ai', { 
+          userId, 
+          state: claudeAuthRequest.state 
+        });
+        
+        // Clean up session
+        delete req.session.claudeAuthRequest;
+        
+        res.redirect(callbackUrl);
+        return;
+      }
+
+      // Regular web interface flow
       const returnUrl = oauthState.originalUrl || '/?connected=outline';
       res.redirect(returnUrl);
 
