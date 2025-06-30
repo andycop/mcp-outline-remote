@@ -64,6 +64,13 @@ show_status() {
         else
             echo "⚠️  OAuth: Refresh token support not detected"
         fi
+        
+        # Check Outline OAuth status
+        if curl -s http://localhost:3131/auth/outline/status | grep -q "not_connected"; then
+            echo "✅ Outline OAuth: Service available (not connected)"
+        else
+            echo "ℹ️  Outline OAuth: Check manually at /auth/outline/status"
+        fi
     else
         echo "❌ MCP Server: Not responding"
     fi

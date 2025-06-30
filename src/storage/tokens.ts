@@ -25,6 +25,14 @@ interface RefreshTokenData {
   expiresAt: number;
 }
 
+export interface OutlineTokenData {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  scopes: string[];
+  authorizedAt: number;
+}
+
 export interface TokenStorage {
   setAuthCode(code: string, data: AuthCodeData): Promise<void>;
   getAuthCode(code: string): Promise<AuthCodeData | null>;
@@ -35,12 +43,19 @@ export interface TokenStorage {
   setRefreshToken(token: string, data: RefreshTokenData): Promise<void>;
   getRefreshToken(token: string): Promise<RefreshTokenData | null>;
   deleteRefreshToken(token: string): Promise<void>;
+  
+  // Outline OAuth token management
+  setOutlineTokens(userId: string, data: OutlineTokenData): Promise<void>;
+  getOutlineTokens(userId: string): Promise<OutlineTokenData | null>;
+  deleteOutlineTokens(userId: string): Promise<void>;
+  isUserAuthorizedForOutline(userId: string): Promise<boolean>;
 }
 
 class InMemoryTokenStorage implements TokenStorage {
   private authCodes = new Map<string, AuthCodeData>();
   private accessTokens = new Map<string, AccessTokenData>();
   private refreshTokens = new Map<string, RefreshTokenData>();
+  private outlineTokens = new Map<string, OutlineTokenData>();
 
   async setAuthCode(code: string, data: AuthCodeData): Promise<void> {
     this.authCodes.set(code, data);
@@ -98,15 +113,37 @@ class InMemoryTokenStorage implements TokenStorage {
   async deleteRefreshToken(token: string): Promise<void> {
     this.refreshTokens.delete(token);
   }
+
+  async setOutlineTokens(userId: string, data: OutlineTokenData): Promise<void> {
+    this.outlineTokens.set(userId, data);
+  }
+
+  async getOutlineTokens(userId: string): Promise<OutlineTokenData | null> {
+    const data = this.outlineTokens.get(userId);
+    if (!data || data.expiresAt < Date.now()) {
+      if (data) {
+        this.outlineTokens.delete(userId);
+      }
+      return null;
+    }
+    return data;
+  }
+
+  async deleteOutlineTokens(userId: string): Promise<void> {
+    this.outlineTokens.delete(userId);
+  }
+
+  async isUserAuthorizedForOutline(userId: string): Promise<boolean> {
+    const tokens = await this.getOutlineTokens(userId);
+    return tokens !== null;
+  }
 }
 
 class RedisTokenStorage implements TokenStorage {
   private redis: any;
 
-  constructor(redisUrl: string) {
-    // Lazy load Redis to keep it optional
-    const Redis = require('ioredis');
-    this.redis = new Redis(redisUrl);
+  constructor(redis: any) {
+    this.redis = redis;
   }
 
   async setAuthCode(code: string, data: AuthCodeData): Promise<void> {
@@ -150,15 +187,37 @@ class RedisTokenStorage implements TokenStorage {
   async deleteRefreshToken(token: string): Promise<void> {
     await this.redis.del(`refresh_token:${token}`);
   }
+
+  async setOutlineTokens(userId: string, data: OutlineTokenData): Promise<void> {
+    const ttl = Math.max(1, Math.floor((data.expiresAt - Date.now()) / 1000));
+    await this.redis.setex(`outline_tokens:${userId}`, ttl, JSON.stringify(data));
+  }
+
+  async getOutlineTokens(userId: string): Promise<OutlineTokenData | null> {
+    const data = await this.redis.get(`outline_tokens:${userId}`);
+    return data ? JSON.parse(data) : null;
+  }
+
+  async deleteOutlineTokens(userId: string): Promise<void> {
+    await this.redis.del(`outline_tokens:${userId}`);
+  }
+
+  async isUserAuthorizedForOutline(userId: string): Promise<boolean> {
+    const tokens = await this.getOutlineTokens(userId);
+    return tokens !== null;
+  }
 }
 
-export function createTokenStorage(): TokenStorage {
+export async function createTokenStorage(): Promise<TokenStorage> {
   const redisUrl = process.env.REDIS_URL;
   
   if (redisUrl) {
     console.log('Using Redis for token storage');
     try {
-      return new RedisTokenStorage(redisUrl);
+      // Use dynamic import for ES modules compatibility
+      const Redis = (await import('ioredis')).default;
+      const redisClient = new Redis(redisUrl);
+      return new RedisTokenStorage(redisClient);
     } catch (error) {
       console.warn('Failed to initialize Redis, falling back to in-memory storage:', error);
       return new InMemoryTokenStorage();

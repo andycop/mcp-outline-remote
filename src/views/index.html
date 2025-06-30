@@ -11,6 +11,8 @@
         .login { background-color: #007bff; color: white; }
         .logout { background-color: #dc3545; color: white; }
         .info { background-color: #e2e3e5; color: #383d41; }
+        .outline { background-color: #17a2b8; color: white; }
+        .connect { background-color: #28a745; color: white; }
     </style>
 </head>
 <body>
@@ -24,6 +26,8 @@
         <li><strong>Login:</strong> <a href="/login">/login</a></li>
         <li><strong>Status:</strong> <a href="/status">/status</a> (protected)</li>
         <li><strong>MCP:</strong> <code>/v1/mcp</code> (protected)</li>
+        <li><strong>Outline Status:</strong> <a href="/auth/outline/status">/auth/outline/status</a> (protected)</li>
+        <li><strong>Connect Outline:</strong> <a href="/auth/outline/connect">/auth/outline/connect</a> (protected)</li>
     </ul>
     
     <p><em>This server uses MS365 OAuth for authentication. Only authenticated users can access the MCP endpoints.</em></p>

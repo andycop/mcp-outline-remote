@@ -3,7 +3,15 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { Request, Response } from 'express';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { OutlineApiClient } from '../utils/outline-client.js';
+import { UserContext } from '../types/context.js';
 import { logger, anonymizeKey } from '../utils/logger.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Import document tools
 import { listDocumentsSchema, listDocumentsHandler } from '../tools/documents/list.js';
@@ -23,8 +31,13 @@ import { deleteCollectionSchema, deleteCollectionHandler } from '../tools/collec
 
 export class McpServerManager {
   private transports: Record<string, StreamableHTTPServerTransport> = {};
+  private outlineClient: OutlineApiClient;
 
-  createServer(): McpServer {
+  constructor(outlineClient: OutlineApiClient) {
+    this.outlineClient = outlineClient;
+  }
+
+  createServer(req: Request): McpServer {
     const server = new McpServer({
       name: 'outline-mcp-server',
       version: '1.0.0',
@@ -35,21 +48,60 @@ export class McpServerManager {
       } 
     });
 
-    // Document tools
-    server.tool('list_documents', 'List documents in a collection', listDocumentsSchema, listDocumentsHandler);
-    server.tool('create_document', 'Create a new document', createDocumentSchema, createDocumentHandler);
-    server.tool('get_document', 'Get a document by ID', getDocumentSchema, getDocumentHandler);
-    server.tool('update_document', 'Update a document', updateDocumentSchema, updateDocumentHandler);
-    server.tool('delete_document', 'Delete a document', deleteDocumentSchema, deleteDocumentHandler);
-    server.tool('search_documents', 'Search documents by query', searchDocumentsSchema, searchDocumentsHandler);
-    server.tool('move_document', 'Move a document to another collection', moveDocumentSchema, moveDocumentHandler);
+    // Extract user context from request
+    const user = (req.session as any)?.user || (req as any).user;
+    const userId = user?.oid || 'legacy';
+    const userContext: UserContext = { userId, outlineClient: this.outlineClient };
 
-    // Collection tools
-    server.tool('list_collections', 'List all collections', listCollectionsSchema, listCollectionsHandler);
-    server.tool('create_collection', 'Create a new collection', createCollectionSchema, createCollectionHandler);
-    server.tool('get_collection', 'Get a collection by ID', getCollectionSchema, getCollectionHandler);
-    server.tool('update_collection', 'Update a collection', updateCollectionSchema, updateCollectionHandler);
-    server.tool('delete_collection', 'Delete a collection', deleteCollectionSchema, deleteCollectionHandler);
+    // Document tools (all now using OAuth authentication)
+    // Register resources
+    server.resource(
+      'outline-parameters', 
+      'outline://parameters', 
+      {
+        name: 'Outline Parameter Reference',
+        description: 'Complete documentation of parameter types, acceptable values, and examples for all Outline MCP tools',
+        mimeType: 'text/markdown'
+      },
+      async () => {
+        const resourcePath = join(__dirname, '../resources/outline-parameters.md');
+        const content = readFileSync(resourcePath, 'utf-8');
+        return {
+          contents: [{
+            uri: 'outline://parameters',
+            mimeType: 'text/markdown',
+            text: content
+          }]
+        };
+      }
+    );
+
+    server.tool('list_documents', 'List documents in a collection', listDocumentsSchema, 
+      async (args) => listDocumentsHandler(args, userContext));
+    server.tool('create_document', 'Create a new document', createDocumentSchema, 
+      async (args) => createDocumentHandler(args, userContext));
+    server.tool('get_document', 'Get a document by ID', getDocumentSchema, 
+      async (args) => getDocumentHandler(args, userContext));
+    server.tool('update_document', 'Update a document', updateDocumentSchema, 
+      async (args) => updateDocumentHandler(args, userContext));
+    server.tool('delete_document', 'Delete a document', deleteDocumentSchema, 
+      async (args) => deleteDocumentHandler(args, userContext));
+    server.tool('search_documents', 'Search documents by query with advanced filtering (statusFilter: draft/archived/published, dateFilter: day/week/month/year)', searchDocumentsSchema, 
+      async (args) => searchDocumentsHandler(args, userContext));
+    server.tool('move_document', 'Move a document to another collection', moveDocumentSchema, 
+      async (args) => moveDocumentHandler(args, userContext));
+
+    // Collection tools (all now using OAuth authentication)
+    server.tool('list_collections', 'List all collections', listCollectionsSchema, 
+      async (args) => listCollectionsHandler(args, userContext));
+    server.tool('create_collection', 'Create a new collection with optional styling (icon: emoji like 📁, color: hex like #FF6B6B)', createCollectionSchema, 
+      async (args) => createCollectionHandler(args, userContext));
+    server.tool('get_collection', 'Get a collection by ID', getCollectionSchema, 
+      async (args) => getCollectionHandler(args, userContext));
+    server.tool('update_collection', 'Update a collection', updateCollectionSchema, 
+      async (args) => updateCollectionHandler(args, userContext));
+    server.tool('delete_collection', 'Delete a collection', deleteCollectionSchema, 
+      async (args) => deleteCollectionHandler(args, userContext));
 
     return server;
   }
@@ -78,7 +130,7 @@ export class McpServerManager {
         }
       });
 
-      const server = this.createServer();
+      const server = this.createServer(req);
       await server.connect(transport);
       await transport.handleRequest(req, res, req.body);
     } else if (sessionId && this.transports[sessionId]) {
