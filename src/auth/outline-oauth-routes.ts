@@ -161,30 +161,41 @@ export function createOutlineOAuthRoutes(oauthService: OutlineOAuthService): Rou
 
   /**
    * Disconnect user from Outline
-   * POST /auth/outline/disconnect
+   * GET /auth/disconnect
    */
-  router.post('/disconnect', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  router.get('/disconnect', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const user = req.session?.user || req.user;
-      if (!user) {
-        res.status(401).json({ error: 'Not authenticated' });
+      const sessionUserId = req.session?.outlineUserId;
+      if (!sessionUserId) {
+        res.status(401).json({ error: 'No active session' });
         return;
       }
 
-      const userId = user.oid;
+      // Revoke user tokens
+      await oauthService.revokeUserTokens(sessionUserId);
 
-      await oauthService.revokeUserTokens(userId);
+      // Clear session
+      delete req.session.outlineUserId;
 
-      logger.info('Successfully disconnected user from Outline', { userId });
+      logger.info('Successfully disconnected user from Outline', { userId: sessionUserId });
 
-      res.json({
-        status: 'disconnected',
-        message: 'Successfully disconnected from Outline'
-      });
+      // Check if this is a browser request
+      const acceptsHtml = req.headers.accept?.includes('text/html');
+      
+      if (acceptsHtml) {
+        // Browser request - redirect to home
+        res.redirect('/');
+      } else {
+        // API request - return JSON
+        res.json({
+          status: 'disconnected',
+          message: 'Successfully disconnected from Outline'
+        });
+      }
     } catch (error: any) {
       logger.error('Failed to disconnect user from Outline', {
         error: error.message,
-        userId: req.session?.user?.oid
+        userId: req.session?.outlineUserId
       });
       res.status(500).json({
         error: 'Failed to disconnect',

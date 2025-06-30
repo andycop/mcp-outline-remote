@@ -48,9 +48,10 @@ export class McpServerManager {
       } 
     });
 
-    // Extract user context from request
-    const user = (req.session as any)?.user || (req as any).user;
-    const userId = user?.oid || 'legacy';
+    // Extract user context from request (simplified OAuth flow)
+    const user = (req as any).user;
+    const sessionUserId = (req.session as any)?.outlineUserId;
+    const userId = user?.oid || sessionUserId || 'legacy-token-user';
     const userContext: UserContext = { userId, outlineClient: this.outlineClient };
 
     // Document tools (all now using OAuth authentication)
