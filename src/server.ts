@@ -391,7 +391,7 @@ async function startServer() {
   });
 
   const server = app.listen(PORT, '0.0.0.0', () => {
-    logger.info(`MCP Outline Remote Server v2 started`, {
+    logger.info(`MCP Outline Remote Server v3 started`, {
       port: PORT,
       binding: '0.0.0.0',
       localEndpoints: {
