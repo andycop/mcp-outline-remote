@@ -16,20 +16,25 @@
     </style>
 </head>
 <body>
-    <h1>MCP Server with MS365 OAuth</h1>
+    <h1>MCP Outline Remote Server v2</h1>
     
     {{STATUS_SECTION}}
     
-    <h2>Endpoints</h2>
+    <h2>Available Endpoints</h2>
     <ul>
-        <li><strong>Health:</strong> <a href="/health">/health</a> (public)</li>
-        <li><strong>Login:</strong> <a href="/login">/login</a></li>
-        <li><strong>Status:</strong> <a href="/status">/status</a> (protected)</li>
-        <li><strong>MCP:</strong> <code>/v1/mcp</code> (protected)</li>
-        <li><strong>Outline Status:</strong> <a href="/auth/outline/status">/auth/outline/status</a> (protected)</li>
-        <li><strong>Connect Outline:</strong> <a href="/auth/outline/connect">/auth/outline/connect</a> (protected)</li>
+        <li><strong>Health Check:</strong> <a href="/health">/health</a> (public)</li>
+        <li><strong>Connect to Outline:</strong> <a href="/auth/outline/connect">/auth/outline/connect</a></li>
+        <li><strong>Connection Status:</strong> <a href="/auth/outline/status">/auth/outline/status</a></li>
+        <li><strong>MCP Protocol:</strong> <code>/v1/mcp</code> (for Claude.ai)</li>
+        <li><strong>OAuth Authorization:</strong> <code>/authorize</code> (for Claude.ai)</li>
     </ul>
     
-    <p><em>This server uses MS365 OAuth for authentication. Only authenticated users can access the MCP endpoints.</em></p>
+    <h2>MCP Tools Available</h2>
+    <ul>
+        <li><strong>Documents:</strong> list, create, get, update, delete, search, move</li>
+        <li><strong>Collections:</strong> list, create, get, update, delete</li>
+    </ul>
+    
+    <p><em>This server provides MCP (Model Context Protocol) tools for Outline. Connect your Outline workspace to use these tools with Claude.ai.</em></p>
 </body>
 </html>

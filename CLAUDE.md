@@ -1,24 +1,26 @@
 # MCP Outline Remote Server v2
 
 ## Project Overview
-This is version 2 of the remote MCP (Model Context Protocol) server that provides tools for interacting with Outline (document management platform). Version 2 features comprehensive OAuth authentication, enhanced security, and production-ready architecture.
+This is version 2 of the remote MCP (Model Context Protocol) server that provides tools for interacting with Outline (document management platform). Version 2 features streamlined Outline OAuth authentication, enhanced security, and production-ready architecture.
 
-## v2 Current Status (2025-06-27)
+## v2 Current Status (2025-06-30)
 - ✅ **COMPLETED**: Migrated to OAuth-enabled mcp-server architecture
 - ✅ **COMPLETED**: All 12 Outline tools implemented with TypeScript
-- ✅ **COMPLETED**: Microsoft Azure OAuth 2.0 integration with PKCE
+- ✅ **COMPLETED**: Simplified OAuth 2.0 integration with Outline as primary authentication
 - ✅ **COMPLETED**: Comprehensive security features and logging anonymization
 - ✅ **COMPLETED**: Modular architecture with clean separation of concerns
 - ✅ **COMPLETED**: Optional Redis storage with in-memory fallback
 - ✅ **COMPLETED**: Production deployment configuration
+- ✅ **COMPLETED**: Direct Outline OAuth integration eliminating dual authentication
 
 ## What's New in v2
 
-### 🔐 **OAuth 2.0 Authentication**
-- **Microsoft Azure/MS365 integration** with full PKCE support
+### 🔐 **Simplified OAuth 2.0 Authentication**
+- **Direct Outline OAuth integration** - Single authentication step eliminates dual OAuth complexity
+- **Claude.ai seamless flow** - OAuth bridge handles MCP client authentication automatically  
+- **One-time authorization** - Users authorize once, automatic token refresh handles renewals
 - **Session management** with secure HTTP-only cookies
-- **Authorization server** built-in for MCP client authentication
-- **Protected endpoints** - All MCP tools require authentication
+- **PKCE security** for enhanced OAuth protection
 
 ### 🛡️ **Enhanced Security**
 - **Logging anonymization system** - Automatically masks sensitive data
@@ -88,15 +90,18 @@ All tools migrated from the Fellow Outline MCP server with enhanced security:
 
 ### Required Variables
 ```env
-# Microsoft OAuth
-MS_CLIENT_ID=your-azure-client-id
-MS_CLIENT_SECRET=your-azure-client-secret
-MS_TENANT=your-app-tenant-id
+# Session Configuration
 SESSION_SECRET=your-super-long-random-secret-key
-REDIRECT_URI=https://your-domain.com/auth/callback
 
-# Outline API
+# Outline API Base
 OUTLINE_API_URL=https://your-outline-instance.com/api
+
+# Outline OAuth (Primary Authentication - Recommended)
+OUTLINE_OAUTH_CLIENT_ID=your-outline-oauth-client-id
+OUTLINE_OAUTH_CLIENT_SECRET=your-outline-oauth-client-secret
+OUTLINE_OAUTH_REDIRECT_URI=https://your-domain.com/auth/outline/callback
+
+# Legacy API Token (Fallback - Shared Authentication)
 OUTLINE_API_TOKEN=your-outline-api-token
 ```
 
@@ -122,10 +127,18 @@ export const outlineClient = new Proxy({} as AxiosInstance, {
 ```
 
 ### OAuth Integration
-- **Browser flow**: Navigate to `/` → Login → Access tools
-- **MCP client flow**: Automated OAuth token exchange
-- **Session management**: Secure, HTTP-only cookies
-- **PKCE flow**: Enhanced security for public clients
+- **Single authentication step**: Direct Outline OAuth integration eliminates dual authentication
+- **Claude.ai seamless flow**: OAuth bridge handles MCP client integration automatically
+- **Automatic token refresh**: Users authorize once, system handles token renewals transparently
+- **Session management**: Secure, HTTP-only cookies with Redis persistence
+- **PKCE flow**: Enhanced security for Outline OAuth with code challenge verification
+
+### Authentication Flow
+1. **Claude.ai Integration**: User adds MCP server in Claude.ai (seamless)
+2. **First Tool Use**: User clicks "Authorize" once on Outline OAuth page
+3. **Automatic Operation**: All subsequent tool usage works without re-authentication
+4. **Token Management**: System automatically refreshes tokens (access tokens ~1-2 hours, refresh tokens weeks-months)
+5. **Re-authorization**: Only required if refresh tokens expire or user manually disconnects
 
 ### Network Configuration
 - **Binds to `0.0.0.0:3131`** for Cloudflare tunnel compatibility
@@ -141,9 +154,9 @@ npm start        # Production mode
 
 ## Migration Notes from v1
 - **v1**: Simple SSE-based server with basic authentication
-- **v2**: Full OAuth integration, enhanced security, modular architecture
-- **Breaking changes**: Environment variables, authentication requirements
-- **Backward compatibility**: Same MCP tools, improved security and reliability
+- **v2**: Streamlined Outline OAuth integration, enhanced security, modular architecture
+- **Breaking changes**: Simplified OAuth flow, removed Microsoft OAuth dependency
+- **Backward compatibility**: Same MCP tools, improved authentication and reliability
 
 ## Production Deployment
 1. Set `NODE_ENV=production`
@@ -152,7 +165,7 @@ npm start        # Production mode
 4. Set secure session configuration
 5. Monitor logs for security events
 
-The v2 server is production-ready with comprehensive security, OAuth authentication, and all Outline API functionality from the original Fellow implementation.
+The v2 server is production-ready with streamlined Outline OAuth, comprehensive security, and all Outline API functionality from the original Fellow implementation.
 
 ## Important Outline API Notes
 
@@ -181,29 +194,30 @@ The v2 server is production-ready with comprehensive security, OAuth authenticat
 ## Session Summary (2025-06-30)
 
 ### ✅ **Major Accomplishments**
-- **Search Documents Bug Resolution** - Fixed critical OAuth authentication issue with search endpoint
-- **Complete Tool Migration** - All 12 MCP tools now use per-user OAuth authentication
-- **Enhanced Parameter Documentation** - Added comprehensive OpenAPI-compliant parameter schemas
-- **Production-Ready Architecture** - Clean, maintainable codebase with proper error handling
+- **OAuth Simplification** - Eliminated dual authentication by using Outline OAuth as primary
+- **Seamless Claude.ai Integration** - Implemented OAuth bridge for transparent MCP client authentication  
+- **Automatic Token Refresh** - Users authorize once, system handles all token renewals transparently
+- **Web Interface Cleanup** - Fixed broken links, updated status endpoints, corrected documentation
+- **Production-Ready Authentication** - Single-step OAuth flow with comprehensive error handling
 
 ### 🔬 **Technical Details**
-- **OAuth Integration**: Migrated from shared API tokens to per-user authentication
-- **Search Fix**: Resolved server-side enum validation for OAuth search requests
-- **Parameter Support**: Complete implementation of statusFilter, dateFilter, and advanced search options
-- **Code Quality**: Removed debug code, maintained clean logging for production
+- **Simplified Authentication**: Single Outline OAuth step instead of dual Microsoft + Outline
+- **OAuth Bridge**: `/authorize` and `/token` endpoints bridge Claude.ai OAuth to Outline authentication
+- **Token Management**: Automatic refresh with 5-minute buffer, access tokens ~1-2 hours, refresh tokens weeks-months
+- **Bearer Authentication**: MCP endpoints use Bearer tokens, web interface uses session-based auth
+- **Environment Simplification**: Removed Microsoft OAuth variables, streamlined configuration
 
-### 🐛 **Critical Bug Fixed**
-**Issue**: `search_documents` returned 400 validation errors for OAuth-authenticated requests
-- **Root Cause**: Outline server internally used `"source": "oauth"` but enum only allowed `["slack", "app", "api"]`
-- **Solution**: Updated Outline server database schema and route validation to include `"oauth"`
-- **Impact**: All search functionality now works correctly with OAuth authentication
+### 🐛 **Critical Fixes**
+**Issue**: "Cannot GET /authorize" and "Cannot GET /auth/outline/callback" routing errors
+- **Root Cause**: Missing OAuth endpoints and incorrect route mounting after Microsoft OAuth removal
+- **Solution**: Implemented OAuth bridge endpoints and corrected callback route mounting
+- **Impact**: Claude.ai can now seamlessly authenticate through simplified Outline OAuth flow
 
-### 📋 **Enhanced Tools**
-All tools now support complete OpenAPI specification parameters:
-- **Search Tools**: Full query, filtering, and pagination support
-- **Collection Tools**: Enhanced with color, icon, and permission parameters
-- **Document Tools**: Complete CRUD operations with advanced options
-- **Parameter Resource**: MCP resource providing comprehensive parameter documentation
+### 📋 **Simplified Authentication Flow**
+Users now experience a single authentication step:
+1. **Claude.ai Integration**: Add MCP server → Automatic OAuth initiation
+2. **Outline Authentication**: Single OAuth consent to Outline workspace
+3. **Immediate Access**: All MCP tools available without additional authentication steps
 
 ## Previous Session (2025-06-29)
 
