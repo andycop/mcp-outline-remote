@@ -83,8 +83,8 @@ export class OutlineOAuthService {
     code: string, 
     codeVerifier: string, 
     state: string,
-    microsoftUserId: string
-  ): Promise<{ tokens: OutlineTokenData; userId: string }> {
+    sessionUserId: string
+  ): Promise<{ tokens: OutlineTokenData; userId: string; sessionUserId: string }> {
     try {
       logger.info('Exchanging authorization code for Outline tokens', {
         hasCode: !!code,
@@ -132,17 +132,18 @@ export class OutlineOAuthService {
         authorizedAt: Date.now()
       };
 
-      // Store tokens using the Microsoft user ID (passed in), not the Outline user ID
-      await this.tokenStorage.setOutlineTokens(microsoftUserId, tokens);
+      // Store tokens using the real Outline user ID as primary identifier
+      await this.tokenStorage.setOutlineTokens(userId, tokens);
 
       logger.info('Successfully exchanged code for Outline tokens', {
-        userId,
+        realUserId: userId,
+        sessionUserId,
         hasRefreshToken: !!tokens.refreshToken,
         expiresIn: tokenData.expires_in,
         scopes: tokens.scopes
       });
 
-      return { tokens, userId };
+      return { tokens, userId, sessionUserId };
     } catch (error: any) {
       logger.error('Failed to exchange authorization code for tokens', {
         error: error.message,

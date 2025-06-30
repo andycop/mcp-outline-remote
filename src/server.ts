@@ -477,8 +477,8 @@ async function startServer() {
         connect: `http://localhost:${PORT}/auth/outline/connect`,
         mcp: `http://localhost:${PORT}/v1/mcp`
       },
-      publicUrl: `https://outline-mcp.your-domain.com`,
-      internalUrl: `http://127.0.0.1:${PORT}`,
+      publicUrl: process.env.PUBLIC_URL || `http://localhost:${PORT}`,
+      internalUrl: `http://localhost:${PORT}`,
       storage: process.env.REDIS_URL ? 'Redis' : 'In-Memory'
     });
     

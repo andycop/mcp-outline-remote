@@ -49,6 +49,11 @@ export interface TokenStorage {
   getOutlineTokens(userId: string): Promise<OutlineTokenData | null>;
   deleteOutlineTokens(userId: string): Promise<void>;
   isUserAuthorizedForOutline(userId: string): Promise<boolean>;
+  
+  // Session to user ID mapping for simplified architecture
+  setSessionUserMapping(sessionUserId: string, realUserId: string): Promise<void>;
+  getSessionUserMapping(sessionUserId: string): Promise<string | null>;
+  deleteSessionUserMapping(sessionUserId: string): Promise<void>;
 }
 
 class InMemoryTokenStorage implements TokenStorage {
@@ -56,6 +61,7 @@ class InMemoryTokenStorage implements TokenStorage {
   private accessTokens = new Map<string, AccessTokenData>();
   private refreshTokens = new Map<string, RefreshTokenData>();
   private outlineTokens = new Map<string, OutlineTokenData>();
+  private sessionUserMappings = new Map<string, string>();
 
   async setAuthCode(code: string, data: AuthCodeData): Promise<void> {
     this.authCodes.set(code, data);
@@ -137,6 +143,18 @@ class InMemoryTokenStorage implements TokenStorage {
     const tokens = await this.getOutlineTokens(userId);
     return tokens !== null;
   }
+
+  async setSessionUserMapping(sessionUserId: string, realUserId: string): Promise<void> {
+    this.sessionUserMappings.set(sessionUserId, realUserId);
+  }
+
+  async getSessionUserMapping(sessionUserId: string): Promise<string | null> {
+    return this.sessionUserMappings.get(sessionUserId) || null;
+  }
+
+  async deleteSessionUserMapping(sessionUserId: string): Promise<void> {
+    this.sessionUserMappings.delete(sessionUserId);
+  }
 }
 
 class RedisTokenStorage implements TokenStorage {
@@ -205,6 +223,20 @@ class RedisTokenStorage implements TokenStorage {
   async isUserAuthorizedForOutline(userId: string): Promise<boolean> {
     const tokens = await this.getOutlineTokens(userId);
     return tokens !== null;
+  }
+
+  async setSessionUserMapping(sessionUserId: string, realUserId: string): Promise<void> {
+    // Store mapping with 7 day TTL (longer than typical session)
+    await this.redis.setex(`session_mapping:${sessionUserId}`, 7 * 24 * 60 * 60, realUserId);
+  }
+
+  async getSessionUserMapping(sessionUserId: string): Promise<string | null> {
+    const realUserId = await this.redis.get(`session_mapping:${sessionUserId}`);
+    return realUserId || null;
+  }
+
+  async deleteSessionUserMapping(sessionUserId: string): Promise<void> {
+    await this.redis.del(`session_mapping:${sessionUserId}`);
   }
 }
 

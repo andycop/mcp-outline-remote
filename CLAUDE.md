@@ -3,44 +3,16 @@
 ## Project Overview
 This is version 3 of the remote MCP (Model Context Protocol) server that provides tools for interacting with Outline (document management platform). Version 3 features streamlined Outline OAuth authentication as the primary authentication method, eliminating dual OAuth complexity and providing seamless Claude.ai integration.
 
-## v3 Current Status (2025-06-30)
-- ✅ **COMPLETED**: Migrated to OAuth-enabled mcp-server architecture
-- ✅ **COMPLETED**: All 12 Outline tools implemented with TypeScript
-- ✅ **COMPLETED**: Simplified OAuth 2.0 integration with Outline as primary authentication
-- ✅ **COMPLETED**: Comprehensive security features and logging anonymization
-- ✅ **COMPLETED**: Modular architecture with clean separation of concerns
-- ✅ **COMPLETED**: Optional Redis storage with in-memory fallback
-- ✅ **COMPLETED**: Production deployment configuration
-- ✅ **COMPLETED**: Direct Outline OAuth integration eliminating dual authentication
+## v3 Status - Production Ready ✅
 
-## What's New in v3
+**Completed**: Streamlined Outline OAuth architecture with simplified authentication, all 12 tools, production security, modular structure, optional Redis, Claude.ai integration.
 
-### 🔐 **Streamlined OAuth 2.0 Authentication**
-- **Direct Outline OAuth integration** - Single authentication step eliminates dual OAuth complexity
-- **Claude.ai seamless flow** - OAuth bridge handles MCP client authentication automatically  
-- **One-time authorization** - Users authorize once, automatic token refresh handles renewals
-- **Eliminated Microsoft OAuth dependency** - Simplified configuration and user experience
-- **Session management** with secure HTTP-only cookies
-- **PKCE security** for enhanced OAuth protection
-
-### 🛡️ **Enhanced Security**
-- **Logging anonymization system** - Automatically masks sensitive data
-  - Anonymization rules: strings ≥8 chars: `sk-1***5678`, <8 chars: `ab*de`
-  - Auto-protects tokens, secrets, session IDs, tenant IDs
-- **Security headers** via Helmet.js
-- **Environment validation** - Fails fast on missing required vars
-- **Graceful shutdown** handling
-
-### 🏗️ **Modular Architecture**
-- **Separated concerns**: auth, MCP, storage, utils, tools
-- **Tool organization**: documents/ and collections/ subdirectories
-- **Maintainable structure** for easy expansion
-
-### 📊 **Production Features**
-- **Optional Redis support** with automatic fallback
-- **Structured logging** throughout all modules
-- **Health checks** and monitoring endpoints
-- **Network binding** to 0.0.0.0 for Cloudflare tunnel compatibility
+### Key Achievements
+- **🔐 Single OAuth Step** - Direct Outline OAuth, eliminated dual authentication complexity
+- **⚡ Claude.ai Bridge** - Seamless MCP client authentication via OAuth endpoints
+- **🛡️ Production Security** - Logging anonymization, security headers, environment validation
+- **🏗️ Clean Architecture** - Modular design with separated concerns
+- **📊 Monitoring Ready** - Health checks, structured logging, graceful shutdown
 
 ## Architecture
 
@@ -69,174 +41,88 @@ src/
 ```
 
 ## Available Tools
-All tools migrated from the Fellow Outline MCP server with enhanced security:
 
-### Document Tools (7)
-- ✅ `list_documents` - List documents in a collection
-- ✅ `create_document` - Create a new document
-- ✅ `get_document` - Get a document by ID
-- ✅ `update_document` - Update a document
-- ✅ `delete_document` - Delete a document
-- ✅ `search_documents` - Search documents by query
-- ✅ `move_document` - Move a document to another collection
+**Document Tools (7)**: list, create, get, update, delete, search, move  
+**Collection Tools (5)**: list, create, get, update, delete
 
-### Collection Tools (5)
-- ✅ `list_collections` - List all collections
-- ✅ `create_collection` - Create a new collection
-- ✅ `get_collection` - Get a collection by ID
-- ✅ `update_collection` - Update a collection
-- ✅ `delete_collection` - Delete a collection
+All tools support per-user authentication and comprehensive error handling.
 
 ## Environment Configuration
 
-### Required Variables
-```env
-# Session Configuration
-SESSION_SECRET=your-super-long-random-secret-key
+**Required**: `SESSION_SECRET`, `OUTLINE_API_URL`, `OUTLINE_OAUTH_CLIENT_ID`, `OUTLINE_OAUTH_CLIENT_SECRET`, `OUTLINE_OAUTH_REDIRECT_URI`
 
-# Outline API Base
-OUTLINE_API_URL=https://your-outline-instance.com/api
+**Optional**: `PUBLIC_URL` (production domain), `REDIS_URL` (enables Redis), `PORT` (default: 3131), `NODE_ENV`
 
-# Outline OAuth (Primary Authentication - Recommended)
-OUTLINE_OAUTH_CLIENT_ID=your-outline-oauth-client-id
-OUTLINE_OAUTH_CLIENT_SECRET=your-outline-oauth-client-secret
-OUTLINE_OAUTH_REDIRECT_URI=https://your-domain.com/auth/outline/callback
-
-# Legacy API Token (Fallback - Shared Authentication)
-OUTLINE_API_TOKEN=your-outline-api-token
-```
-
-### Optional Variables
-```env
-REDIS_URL=redis://localhost:6379      # enables Redis storage
-PORT=3131
-NODE_ENV=development
-```
-
-## Key Technical Features
-
-### Lazy-Loaded Outline Client
-The Outline API client is lazy-loaded to ensure environment variables are available:
-```typescript
-// Creates client only when first used, after dotenv.config()
-export const outlineClient = new Proxy({} as AxiosInstance, {
-  get(target, prop) {
-    const client = createOutlineClient();
-    return (client as any)[prop];
-  }
-});
-```
+## Technical Features
 
 ### OAuth Integration
-- **Single authentication step**: Direct Outline OAuth integration eliminates dual authentication
-- **Claude.ai seamless flow**: OAuth bridge handles MCP client integration automatically
-- **Automatic token refresh**: Users authorize once, system handles token renewals transparently
-- **Session management**: Secure, HTTP-only cookies with Redis persistence
-- **PKCE flow**: Enhanced security for Outline OAuth with code challenge verification
+- **Single authentication step**: Direct Outline OAuth (no dual authentication)
+- **Claude.ai bridge**: OAuth endpoints handle MCP client integration
+- **Auto token refresh**: Access tokens ~1-2 hours, refresh tokens weeks-months
+- **PKCE security**: Enhanced OAuth with code challenge verification
 
 ### Authentication Flow
-1. **Claude.ai Integration**: User adds MCP server in Claude.ai (seamless)
-2. **First Tool Use**: User clicks "Authorize" once on Outline OAuth page
-3. **Automatic Operation**: All subsequent tool usage works without re-authentication
-4. **Token Management**: System automatically refreshes tokens (access tokens ~1-2 hours, refresh tokens weeks-months)
-5. **Re-authorization**: Only required if refresh tokens expire or user manually disconnects
+1. Claude.ai integration → OAuth bridge initiates Outline authorization
+2. User authorizes once on Outline OAuth page
+3. System handles all token management automatically
+4. Re-authorization only if refresh tokens expire
 
 ### Network Configuration
-- **Binds to `0.0.0.0:3131`** for Cloudflare tunnel compatibility
-- **Public URL**: `https://outline-mcp.your-domain.com`
-- **Internal URL**: `http://127.0.0.1:3131`
+- Binds to `0.0.0.0:3131` for Cloudflare tunnel compatibility
+- Configure `PUBLIC_URL` environment variable for production deployments
 
 ## Development Commands
 ```bash
 npm run dev      # Development with hot reload
-npm run build    # Build TypeScript to JavaScript
+npm run build    # Build TypeScript
 npm start        # Production mode
 ```
 
-## Migration Notes 
-### v1 → v3
-- **v1**: Simple SSE-based server with basic authentication
-- **v3**: Streamlined Outline OAuth integration, enhanced security, modular architecture
-- **Breaking changes**: Complete authentication system overhaul, simplified OAuth flow
-- **Backward compatibility**: Same MCP tools, dramatically improved authentication and reliability
-
-### v2 → v3  
-- **v2**: Dual OAuth (Microsoft + Outline) authentication
-- **v3**: Single Outline OAuth authentication with Claude.ai bridge
-- **Breaking changes**: Removed Microsoft OAuth dependency, simplified environment configuration
-- **Benefits**: Faster user onboarding, reduced authentication complexity, better user experience
+## Migration Notes
+- **v1 → v3**: Simple SSE → Streamlined Outline OAuth, enhanced security, modular architecture
+- **v2 → v3**: Dual OAuth → Single Outline OAuth with Claude.ai bridge  
+- **Breaking changes**: Authentication overhaul, simplified configuration
+- **Benefits**: Faster onboarding, reduced complexity, better UX
 
 ## Production Deployment
 1. Set `NODE_ENV=production`
-2. Configure `REDIS_URL` for token storage
-3. Use HTTPS for `REDIRECT_URI`
-4. Set secure session configuration
-5. Monitor logs for security events
+2. Configure `REDIS_URL` for persistence  
+3. Use HTTPS for redirect URIs
+4. Monitor logs for security events
 
-The v3 server is production-ready with streamlined Outline OAuth, simplified authentication flow, comprehensive security, and all Outline API functionality from the original Fellow implementation.
+## Important Notes
 
-## Important Outline API Notes
+**⚠️ CRITICAL: All Outline API endpoints use POST requests** (except OAuth endpoints)
 
-**⚠️ CRITICAL: All Outline API endpoints use POST requests**
-- Every API endpoint in Outline's documentation uses POST, including auth.info
-- No GET requests found in the API documentation 
-- Always use POST when calling Outline API endpoints
-- This includes user info, document operations, collection operations, etc.
-- OAuth endpoints (/oauth/authorize, /oauth/token) follow standard OAuth patterns
+## Next Priorities
 
-## What To Work On Next
+### Tool Optimizations
+- LLM-optimized responses for better Claude.ai integration
+- Enhanced error messages and result summarization
+- Performance optimizations
 
-### 🔧 **Tool Optimizations** (Next Priority)
-1. **LLM-optimized tool responses** - Enhance tool outputs for better Claude.ai integration
-2. **Response formatting** - Improve data structure and readability for AI consumption  
-3. **Tool efficiency** - Reduce API calls and optimize performance
-4. **Enhanced error messages** - More descriptive and actionable error responses
-5. **Result summarization** - Add intelligent summarization for large result sets
+### Future Improvements  
+- Enhanced error handling and rate limiting
+- Monitoring metrics and testing framework
 
-### 🚀 **Future Improvements**
-1. **Error handling** - More robust error boundaries and user feedback
-2. **Rate limiting** - Add request rate limiting for security
-3. **Monitoring** - Add metrics/health checks for production
-4. **Testing framework** - Add proper unit/integration tests
+## Recent Session Summaries
 
-## Session Summary (2025-06-30)
+### 🎉 Architectural Success (2025-06-30)
+**Major Achievement**: Simplified architecture eliminating dual OAuth complexity
 
-### ✅ **Major Accomplishments**
-- **OAuth Simplification** - Eliminated dual authentication by using Outline OAuth as primary
-- **Seamless Claude.ai Integration** - Implemented OAuth bridge for transparent MCP client authentication  
-- **Automatic Token Refresh** - Users authorize once, system handles all token renewals transparently
-- **Web Interface Cleanup** - Fixed broken links, updated status endpoints, corrected documentation
-- **Production-Ready Authentication** - Single-step OAuth flow with comprehensive error handling
+✅ **Authentication Flow Success**:
+1. Session Created: temporary ID → Real Outline user ID mapping
+2. OAuth Completed: Real user ID (dd22f354-d625-412a-a374-1b95c4353557) obtained  
+3. Claude.ai Tokens: Use real user ID directly
+4. API Usage: All tools work without authentication errors
 
-### 🔬 **Technical Details**
-- **Simplified Authentication**: Single Outline OAuth step instead of dual Microsoft + Outline
-- **OAuth Bridge**: `/authorize` and `/token` endpoints bridge Claude.ai OAuth to Outline authentication
-- **Token Management**: Automatic refresh with 5-minute buffer, access tokens ~1-2 hours, refresh tokens weeks-months
-- **Bearer Authentication**: MCP endpoints use Bearer tokens, web interface uses session-based auth
-- **Environment Simplification**: Removed Microsoft OAuth variables, streamlined configuration
+✅ **Architecture Benefits**:
+- Single token refresh logic (only Outline tokens need management)
+- Real user IDs throughout (no fake ID confusion)
+- Clean session mapping (temp session ID bridges to permanent real ID)
+- Eliminated timing issues (no dual token expiration conflicts)
 
-### 🐛 **Critical Fixes**
-**Issue**: "Cannot GET /authorize" and "Cannot GET /auth/outline/callback" routing errors
-- **Root Cause**: Missing OAuth endpoints and incorrect route mounting after Microsoft OAuth removal
-- **Solution**: Implemented OAuth bridge endpoints and corrected callback route mounting
-- **Impact**: Claude.ai can now seamlessly authenticate through simplified Outline OAuth flow
-
-### 📋 **Simplified Authentication Flow**
-Users now experience a single authentication step:
-1. **Claude.ai Integration**: Add MCP server → Automatic OAuth initiation
-2. **Outline Authentication**: Single OAuth consent to Outline workspace
-3. **Immediate Access**: All MCP tools available without additional authentication steps
-
-## Previous Session (2025-06-29)
-
-### ✅ **Major Accomplishments**
-- **OAuth 2.0 Refresh Token Implementation** - Added complete refresh token support
-- **Session Persistence** - Fixed Claude.ai timeout issues with automatic token refresh
-- **Production Docker Setup** - Redis persistence, health checks, reboot script
-- **Documentation Updates** - Fixed MS_TENANT requirements, added comprehensive guides
-
-### 🔬 **Technical Details**
-- **Token Lifetimes**: Access tokens (1 hour), Refresh tokens (7 days with rotation)
-- **Storage**: Redis persistent storage with in-memory fallback
-- **Security**: Proper OAuth 2.0 error codes, token rotation, anonymized logging
-- **Development**: Added `./reboot.sh` script for easy container rebuilds
+### Previous Accomplishments (2025-06-29)
+- OAuth 2.0 refresh token implementation with session persistence
+- Production Docker setup with Redis and health checks  
+- Fixed Claude.ai timeout issues with automatic token refresh

@@ -33,17 +33,32 @@ export class AuthMiddleware {
             return;
           }
           
-          // Get user's Outline tokens using the userId from the access token
-          const outlineTokens = await this.storage.getOutlineTokens(tokenData.userId);
-          
-          // Verify Outline tokens are still valid (and refresh if needed)
-          if (outlineTokens && this.outlineOAuthService) {
+          // Resolve session user ID to real Outline user ID
+          let realUserId = tokenData.userId;
+          if (this.outlineOAuthService) {
+            // Try to get the real user ID from session mapping
+            const mappedUserId = await this.storage.getSessionUserMapping(tokenData.userId);
+            if (mappedUserId) {
+              realUserId = mappedUserId;
+              logger.debug('Resolved session mapping', {
+                sessionUserId: tokenData.userId,
+                realUserId: mappedUserId
+              });
+            }
+          }
+
+          // Try to get valid Outline access token (handles refresh automatically)
+          let outlineTokens = null;
+          if (this.outlineOAuthService) {
             try {
-              // This will automatically refresh if needed
-              await this.outlineOAuthService.getValidAccessToken(tokenData.userId);
+              // This will automatically refresh expired tokens or throw if user not connected
+              await this.outlineOAuthService.getValidAccessToken(realUserId);
+              // If successful, get the refreshed tokens
+              outlineTokens = await this.storage.getOutlineTokens(realUserId);
             } catch (error) {
-              logger.warn('Outline token refresh failed, requiring re-authentication', {
-                userId: tokenData.userId,
+              logger.warn('Outline authentication failed, requiring connection', {
+                sessionUserId: tokenData.userId,
+                realUserId,
                 error: error instanceof Error ? error.message : String(error)
               });
               res.status(401).json({
@@ -54,21 +69,23 @@ export class AuthMiddleware {
             }
           }
           
-          // Fetch real user info from Outline
-          const userInfo = await this.outlineClient.getUserInfo(tokenData.userId);
+          // Fetch real user info from Outline using the real user ID
+          const userInfo = await this.outlineClient.getUserInfo(realUserId);
           
           logger.debug('MCP authentication successful', {
-            userId: tokenData.userId,
+            sessionUserId: tokenData.userId,
+            realUserId,
             hasOutlineTokens: !!outlineTokens,
             realUserName: userInfo?.name
           });
           
-          // Set user context for MCP handlers
+          // Set user context for MCP handlers using real user ID
           (req as any).user = {
-            oid: tokenData.userId,
+            oid: realUserId, // Use real Outline user ID as primary identifier
+            sessionUserId: tokenData.userId, // Keep session ID for reference
             name: userInfo?.name || 'Outline User',
             email: userInfo?.email || 'outline-user@authenticated.com',
-            outlineUserId: userInfo?.id, // The real Outline user ID
+            outlineUserId: realUserId, // Same as oid now
             outlineTokens
           };
           return next();

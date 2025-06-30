@@ -131,12 +131,15 @@ export function createOutlineOAuthRoutes(oauthService: OutlineOAuthService, toke
       });
 
       // Exchange code for tokens
-      const { tokens, userId } = await oauthService.exchangeCodeForTokens(
+      const { tokens, userId, sessionUserId } = await oauthService.exchangeCodeForTokens(
         code as string,
         oauthState.codeVerifier,
         state as string,
         oauthState.userId
       );
+
+      // Store session mapping from fake session ID to real Outline user ID
+      await tokenStorage.setSessionUserMapping(sessionUserId, userId);
 
       logger.info('Successfully connected user to Outline', {
         userId,
@@ -150,9 +153,8 @@ export function createOutlineOAuthRoutes(oauthService: OutlineOAuthService, toke
         // Complete the Claude.ai OAuth flow
         const authCode = `auth_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         
-        // Store auth request in token storage (Redis) using authCode as key
-        // This allows the /token endpoint to find it regardless of session
-        // Use the session-based userId (oauthState.userId) for consistency with token storage
+        // Store auth request in token storage using the real Outline user ID
+        // This simplifies the architecture by eliminating fake user IDs
         await tokenStorage.setAuthCode(authCode, {
           clientId: claudeAuthRequest.client_id,
           redirectUri: claudeAuthRequest.redirect_uri,
@@ -160,7 +162,7 @@ export function createOutlineOAuthRoutes(oauthService: OutlineOAuthService, toke
           state: claudeAuthRequest.state,
           codeChallenge: claudeAuthRequest.code_challenge,
           codeChallengeMethod: claudeAuthRequest.code_challenge_method,
-          userId: oauthState.userId, // Use session-based ID, not Outline user ID
+          userId: userId, // Use real Outline user ID as primary identifier
           expiresAt: Date.now() + (10 * 60 * 1000) // 10 minute expiry
         });
         

@@ -48,11 +48,20 @@ export class McpServerManager {
       } 
     });
 
-    // Extract user context from request (simplified OAuth flow)
+    // Extract user context from request - use real Outline user ID
     const user = (req as any).user;
     const sessionUserId = (req.session as any)?.outlineUserId;
+    
+    // User ID should now be the real Outline user ID from middleware resolution
     const userId = user?.oid || sessionUserId || 'legacy-token-user';
     const userContext: UserContext = { userId, outlineClient: this.outlineClient };
+    
+    logger.debug('MCP server created with user context', {
+      realUserId: userId,
+      sessionUserId: user?.sessionUserId,
+      hasUser: !!user,
+      hasSession: !!sessionUserId
+    });
 
     // Document tools (all now using OAuth authentication)
     // Register resources

@@ -121,7 +121,7 @@ export class OAuthServer {
     // OAuth Discovery/Metadata endpoint
     router.get('/.well-known/oauth-authorization-server', (req, res) => {
       const protocol = req.get('x-forwarded-proto') || req.protocol;
-      const baseUrl = `${protocol === 'http' && req.get('host')?.includes('test-mcp.your-domain.com') ? 'https' : protocol}://${req.get('host')}`;
+      const baseUrl = process.env.PUBLIC_URL || `${protocol}://${req.get('host')}`;
       res.json({
         issuer: baseUrl,
         authorization_endpoint: `${baseUrl}/authorize`,
