@@ -154,6 +154,15 @@ npm start        # Production mode
 
 The v2 server is production-ready with comprehensive security, OAuth authentication, and all Outline API functionality from the original Fellow implementation.
 
+## Important Outline API Notes
+
+**⚠️ CRITICAL: All Outline API endpoints use POST requests**
+- Every API endpoint in Outline's documentation uses POST, including auth.info
+- No GET requests found in the API documentation 
+- Always use POST when calling Outline API endpoints
+- This includes user info, document operations, collection operations, etc.
+- OAuth endpoints (/oauth/authorize, /oauth/token) follow standard OAuth patterns
+
 ## What To Work On Next
 
 ### 🔧 **Tool Optimizations** (Next Priority)
@@ -169,7 +178,34 @@ The v2 server is production-ready with comprehensive security, OAuth authenticat
 3. **Monitoring** - Add metrics/health checks for production
 4. **Testing framework** - Add proper unit/integration tests
 
-## Session Summary (2025-06-29)
+## Session Summary (2025-06-30)
+
+### ✅ **Major Accomplishments**
+- **Search Documents Bug Resolution** - Fixed critical OAuth authentication issue with search endpoint
+- **Complete Tool Migration** - All 12 MCP tools now use per-user OAuth authentication
+- **Enhanced Parameter Documentation** - Added comprehensive OpenAPI-compliant parameter schemas
+- **Production-Ready Architecture** - Clean, maintainable codebase with proper error handling
+
+### 🔬 **Technical Details**
+- **OAuth Integration**: Migrated from shared API tokens to per-user authentication
+- **Search Fix**: Resolved server-side enum validation for OAuth search requests
+- **Parameter Support**: Complete implementation of statusFilter, dateFilter, and advanced search options
+- **Code Quality**: Removed debug code, maintained clean logging for production
+
+### 🐛 **Critical Bug Fixed**
+**Issue**: `search_documents` returned 400 validation errors for OAuth-authenticated requests
+- **Root Cause**: Outline server internally used `"source": "oauth"` but enum only allowed `["slack", "app", "api"]`
+- **Solution**: Updated Outline server database schema and route validation to include `"oauth"`
+- **Impact**: All search functionality now works correctly with OAuth authentication
+
+### 📋 **Enhanced Tools**
+All tools now support complete OpenAPI specification parameters:
+- **Search Tools**: Full query, filtering, and pagination support
+- **Collection Tools**: Enhanced with color, icon, and permission parameters
+- **Document Tools**: Complete CRUD operations with advanced options
+- **Parameter Resource**: MCP resource providing comprehensive parameter documentation
+
+## Previous Session (2025-06-29)
 
 ### ✅ **Major Accomplishments**
 - **OAuth 2.0 Refresh Token Implementation** - Added complete refresh token support

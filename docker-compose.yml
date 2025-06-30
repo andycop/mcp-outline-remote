@@ -16,6 +16,11 @@ services:
       - OUTLINE_API_URL=${OUTLINE_API_URL}
       - OUTLINE_API_TOKEN=${OUTLINE_API_TOKEN}
       
+      # Outline OAuth (for per-user authentication)
+      - OUTLINE_OAUTH_CLIENT_ID=${OUTLINE_OAUTH_CLIENT_ID}
+      - OUTLINE_OAUTH_CLIENT_SECRET=${OUTLINE_OAUTH_CLIENT_SECRET}
+      - OUTLINE_OAUTH_REDIRECT_URI=${OUTLINE_OAUTH_REDIRECT_URI}
+      
       # Optional
       - MS_TENANT=${MS_TENANT:-common}
       - PORT=3131
