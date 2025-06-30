@@ -75,11 +75,11 @@ async function initializeServices() {
     });
   }
 
-  // Initialize authentication middleware with Outline OAuth as primary
-  const authMiddleware = new AuthMiddleware(tokenStorage, outlineOAuthService);
-
   // Initialize Outline API client
   const outlineApiClient = createOutlineApiClient(tokenStorage, outlineOAuthService);
+
+  // Initialize authentication middleware with Outline OAuth as primary
+  const authMiddleware = new AuthMiddleware(tokenStorage, outlineApiClient, outlineOAuthService);
 
   const mcpManager = new McpServerManager(outlineApiClient);
 
@@ -192,8 +192,16 @@ async function startServer() {
     }
     
     // User not authorized - redirect to Outline OAuth
-    const { url: outlineAuthUrl } = outlineOAuthService.generateAuthUrl(userId);
-    logger.info('Redirecting to Outline OAuth for new authorization', { userId, state });
+    const { url: outlineAuthUrl, codeVerifier, state: oauthState } = outlineOAuthService.generateAuthUrl(userId);
+    
+    // Store OAuth state for callback validation
+    (req.session as any).outlineOAuthState = {
+      codeVerifier,
+      userId,
+      originalUrl: '/' // For web flow, could be used for return URL
+    };
+    
+    logger.info('Redirecting to Outline OAuth for new authorization', { userId, state: oauthState });
     res.redirect(outlineAuthUrl);
   });
 
@@ -209,9 +217,9 @@ async function startServer() {
       return;
     }
     
-    // Find the auth request by code
-    const authRequest = (req.session as any)?.authRequest;
-    if (!authRequest || authRequest.authCode !== code) {
+    // Find the auth request by code in token storage
+    const authCodeData = await services.tokenStorage.getAuthCode(code as string);
+    if (!authCodeData) {
       res.status(400).json({
         error: 'invalid_grant',
         error_description: 'Authorization code is invalid or expired'
@@ -220,10 +228,10 @@ async function startServer() {
     }
     
     // Validate PKCE if provided
-    if (authRequest.code_challenge && code_verifier) {
+    if (authCodeData.codeChallenge && code_verifier) {
       // Simple validation - in production you'd want proper PKCE validation
       logger.debug('PKCE validation', { 
-        hasChallenge: !!authRequest.code_challenge,
+        hasChallenge: !!authCodeData.codeChallenge,
         hasVerifier: !!code_verifier 
       });
     }
@@ -236,20 +244,19 @@ async function startServer() {
     // Store token in our storage
     await services.tokenStorage.setAccessToken(accessToken, {
       token: accessToken,
-      userId: authRequest.userId,
+      userId: authCodeData.userId,
       clientId: client_id as string,
-      scope: authRequest.scope as string,
+      scope: authCodeData.scope as string,
       expiresAt: Date.now() + (expiresIn * 1000)
     });
     
-    // Clean up session
-    delete (req.session as any).authRequest;
-    delete (req.session as any).claudeAuthRequest;
+    // Clean up auth code (one-time use)
+    await services.tokenStorage.deleteAuthCode(code as string);
     
     logger.info('Token issued successfully', { 
-      userId: authRequest.userId,
+      userId: authCodeData.userId,
       client_id,
-      scope: authRequest.scope 
+      scope: authCodeData.scope 
     });
     
     res.json({
@@ -257,13 +264,13 @@ async function startServer() {
       refresh_token: refreshToken,
       token_type: 'Bearer',
       expires_in: expiresIn,
-      scope: authRequest.scope
+      scope: authCodeData.scope
     });
   });
 
   // Outline OAuth routes (for completing the OAuth flow)
   if (outlineOAuthService) {
-    app.use('/auth', createOutlineOAuthRoutes(outlineOAuthService));
+    app.use('/auth/outline', createOutlineOAuthRoutes(outlineOAuthService, services.tokenStorage));
     logger.info('Outline OAuth routes enabled as primary authentication');
   }
 
@@ -351,13 +358,13 @@ async function startServer() {
           : `<div class="status unauthenticated">
                <strong>⚠ Outline Not Connected</strong><br>
                Connect to your Outline workspace to use MCP tools.<br>
-               <a href="/auth/connect" class="button login">Connect to Outline</a>
+               <a href="/auth/outline/connect" class="button login">Connect to Outline</a>
              </div>`;
       } else {
         statusSection = `<div class="status unauthenticated">
            <strong>✗ Not Authenticated</strong><br>
            Connect to your Outline workspace to access MCP tools.<br>
-           <a href="/auth/connect" class="button login">Connect to Outline</a>
+           <a href="/auth/outline/connect" class="button login">Connect to Outline</a>
          </div>`;
       }
     } else {
@@ -384,12 +391,12 @@ async function startServer() {
   });
 
   const server = app.listen(PORT, '0.0.0.0', () => {
-    logger.info(`MCP Server with OAuth started`, {
+    logger.info(`MCP Outline Remote Server v2 started`, {
       port: PORT,
       binding: '0.0.0.0',
       localEndpoints: {
         health: `http://localhost:${PORT}/health`,
-        login: `http://localhost:${PORT}/login`,
+        connect: `http://localhost:${PORT}/auth/outline/connect`,
         mcp: `http://localhost:${PORT}/v1/mcp`
       },
       publicUrl: `https://outline-mcp.netdaisy.com`,
@@ -397,11 +404,11 @@ async function startServer() {
       storage: process.env.REDIS_URL ? 'Redis' : 'In-Memory'
     });
     
-    logger.info('OAuth Configuration Status', {
-      clientId: process.env.MS_CLIENT_ID ? anonymizeKey(process.env.MS_CLIENT_ID) : '✗ Missing',
-      clientSecret: process.env.MS_CLIENT_SECRET ? '✓ Set' : '✗ Missing',
-      redirectUri: process.env.REDIRECT_URI || '✗ Missing',
-      tenant: process.env.MS_TENANT ? anonymizeKey(process.env.MS_TENANT) : 'common'
+    logger.info('Outline OAuth Configuration Status', {
+      clientId: process.env.OUTLINE_OAUTH_CLIENT_ID ? anonymizeKey(process.env.OUTLINE_OAUTH_CLIENT_ID) : '✗ Missing',
+      clientSecret: process.env.OUTLINE_OAUTH_CLIENT_SECRET ? '✓ Set' : '✗ Missing',
+      redirectUri: process.env.OUTLINE_OAUTH_REDIRECT_URI || '✗ Missing',
+      baseUrl: process.env.OUTLINE_API_URL?.replace('/api', '') || '✗ Missing'
     });
   });
 

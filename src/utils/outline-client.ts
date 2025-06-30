@@ -147,6 +147,28 @@ export class OutlineApiClient {
   }
 
   /**
+   * Get user information from Outline
+   */
+  async getUserInfo(userId: string): Promise<{ id: string; name: string; email: string } | null> {
+    try {
+      const response = await this.makeRequest(userId, '/auth.info', { method: 'POST' });
+      const user = response.data?.data?.user;
+      
+      if (user) {
+        return {
+          id: user.id,
+          name: user.name,
+          email: user.email
+        };
+      }
+      return null;
+    } catch (error) {
+      logger.warn('Failed to fetch user info from Outline', { userId, error: error instanceof Error ? error.message : String(error) });
+      return null;
+    }
+  }
+
+  /**
    * Check if user has valid Outline authentication
    */
   async isUserAuthenticated(userId: string): Promise<boolean> {

@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { OutlineOAuthService, OutlineNotAuthorizedException } from './outline-oauth.js';
+import { TokenStorage } from '../storage/tokens.js';
 import { logger } from '../utils/logger.js';
 
 interface AuthenticatedRequest extends Request {
@@ -13,7 +14,7 @@ interface OutlineOAuthState {
   originalUrl?: string;
 }
 
-export function createOutlineOAuthRoutes(oauthService: OutlineOAuthService): Router {
+export function createOutlineOAuthRoutes(oauthService: OutlineOAuthService, tokenStorage: TokenStorage): Router {
   const router = Router();
 
   /**
@@ -149,23 +150,27 @@ export function createOutlineOAuthRoutes(oauthService: OutlineOAuthService): Rou
         // Complete the Claude.ai OAuth flow
         const authCode = `auth_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         
-        // Store auth request for token exchange
-        req.session.authRequest = {
-          client_id: claudeAuthRequest.client_id,
-          redirect_uri: claudeAuthRequest.redirect_uri,
+        // Store auth request in token storage (Redis) using authCode as key
+        // This allows the /token endpoint to find it regardless of session
+        // Use the session-based userId (oauthState.userId) for consistency with token storage
+        await tokenStorage.setAuthCode(authCode, {
+          clientId: claudeAuthRequest.client_id,
+          redirectUri: claudeAuthRequest.redirect_uri,
           scope: claudeAuthRequest.scope,
           state: claudeAuthRequest.state,
-          code_challenge: claudeAuthRequest.code_challenge,
-          code_challenge_method: claudeAuthRequest.code_challenge_method,
-          authCode,
-          userId
-        };
+          codeChallenge: claudeAuthRequest.code_challenge,
+          codeChallengeMethod: claudeAuthRequest.code_challenge_method,
+          userId: oauthState.userId, // Use session-based ID, not Outline user ID
+          expiresAt: Date.now() + (10 * 60 * 1000) // 10 minute expiry
+        });
         
         // Redirect back to Claude.ai
         const callbackUrl = `${claudeAuthRequest.redirect_uri}?code=${authCode}&state=${claudeAuthRequest.state}`;
         logger.info('Outline OAuth completed, redirecting to Claude.ai', { 
-          userId, 
-          state: claudeAuthRequest.state 
+          sessionUserId: oauthState.userId,
+          outlineUserId: userId, 
+          state: claudeAuthRequest.state,
+          authCode: authCode.substring(0, 10) + '...'
         });
         
         // Clean up session
@@ -237,52 +242,62 @@ export function createOutlineOAuthRoutes(oauthService: OutlineOAuthService): Rou
   });
 
   /**
-   * Get user's Outline connection status
+   * Get user's Outline connection status (public endpoint)
    * GET /auth/outline/status
    */
   router.get('/status', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const user = req.session?.user || req.user;
-      if (!user) {
-        res.status(401).json({ error: 'Not authenticated' });
+      const sessionUserId = req.session?.outlineUserId;
+      
+      if (!sessionUserId) {
+        res.json({
+          status: 'no_session',
+          connected: false,
+          message: 'No active session found. Start by connecting to Outline.',
+          connect_url: '/auth/outline/connect'
+        });
         return;
       }
 
-      const userId = user.oid;
-      const isAuthorized = await oauthService.isUserAuthorized(userId);
+      const isAuthorized = await oauthService.isUserAuthorized(sessionUserId);
 
       if (isAuthorized) {
-        const tokens = await oauthService.getValidAccessToken(userId);
-        res.json({
-          status: 'connected',
-          connected: true,
-          hasValidToken: !!tokens,
-          userId
-        });
+        try {
+          const tokens = await oauthService.getValidAccessToken(sessionUserId);
+          res.json({
+            status: 'connected',
+            connected: true,
+            hasValidToken: !!tokens,
+            sessionUserId,
+            message: 'Successfully connected to Outline'
+          });
+        } catch (error: any) {
+          res.json({
+            status: 'token_expired',
+            connected: false,
+            sessionUserId,
+            message: 'Connection expired. Please reconnect.',
+            connect_url: '/auth/outline/connect'
+          });
+        }
       } else {
         res.json({
           status: 'not_connected',
           connected: false,
-          userId
+          sessionUserId,
+          message: 'Not connected to Outline. Please authorize access.',
+          connect_url: '/auth/outline/connect'
         });
       }
     } catch (error: any) {
-      if (error instanceof OutlineNotAuthorizedException) {
-        res.json({
-          status: 'not_connected',
-          connected: false,
-          message: error.message
-        });
-      } else {
-        logger.error('Failed to check Outline connection status', {
-          error: error.message,
-          userId: req.session?.user?.oid
-        });
-        res.status(500).json({
-          error: 'Failed to check status',
-          message: error.message
-        });
-      }
+      logger.error('Failed to check Outline connection status', {
+        error: error.message,
+        sessionUserId: req.session?.outlineUserId
+      });
+      res.status(500).json({
+        error: 'Failed to check status',
+        message: error.message
+      });
     }
   });
 
