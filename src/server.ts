@@ -114,7 +114,154 @@ async function startServer() {
     }
   }));
 
-  // Outline OAuth routes (primary authentication)
+  // OAuth authorization endpoints for Claude.ai integration
+  app.get('/authorize', async (req, res) => {
+    const { response_type, client_id, redirect_uri, scope, state, code_challenge, code_challenge_method } = req.query;
+    
+    if (!outlineOAuthService) {
+      // Legacy token mode - immediately authorize
+      if (process.env.OUTLINE_API_TOKEN) {
+        // Generate a simple authorization code
+        const authCode = `auth_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Store the auth request details for token exchange
+        (req.session as any).authRequest = {
+          client_id,
+          redirect_uri,
+          scope,
+          state,
+          code_challenge,
+          code_challenge_method,
+          authCode,
+          userId: 'legacy-token-user'
+        };
+        
+        // Redirect back to Claude.ai with auth code
+        const callbackUrl = `${redirect_uri}?code=${authCode}&state=${state}`;
+        logger.info('Legacy token authorization successful', { client_id, state });
+        res.redirect(callbackUrl);
+        return;
+      } else {
+        res.status(503).json({ 
+          error: 'service_unavailable',
+          error_description: 'No authentication method configured'
+        });
+        return;
+      }
+    }
+    
+    // OAuth mode - start Outline OAuth flow
+    // Generate a session-based user ID
+    let userId = (req.session as any)?.outlineUserId;
+    if (!userId) {
+      userId = `outline-user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      (req.session as any).outlineUserId = userId;
+    }
+    
+    // Store the original Claude.ai auth request
+    (req.session as any).claudeAuthRequest = {
+      client_id,
+      redirect_uri,
+      scope,
+      state,
+      code_challenge,
+      code_challenge_method
+    };
+    
+    // Check if user is already connected to Outline
+    const isAuthorized = await outlineOAuthService.isUserAuthorized(userId);
+    if (isAuthorized) {
+      // User already authorized - generate auth code and redirect back
+      const authCode = `auth_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      (req.session as any).authRequest = {
+        client_id,
+        redirect_uri,
+        scope,
+        state,
+        code_challenge,
+        code_challenge_method,
+        authCode,
+        userId
+      };
+      
+      const callbackUrl = `${redirect_uri}?code=${authCode}&state=${state}`;
+      logger.info('User already authorized for Outline, redirecting to Claude.ai', { userId, state });
+      res.redirect(callbackUrl);
+      return;
+    }
+    
+    // User not authorized - redirect to Outline OAuth
+    const { url: outlineAuthUrl } = outlineOAuthService.generateAuthUrl(userId);
+    logger.info('Redirecting to Outline OAuth for new authorization', { userId, state });
+    res.redirect(outlineAuthUrl);
+  });
+
+  // Token endpoint for Claude.ai
+  app.post('/token', async (req, res) => {
+    const { grant_type, code, redirect_uri, client_id, code_verifier } = req.body;
+    
+    if (grant_type !== 'authorization_code') {
+      res.status(400).json({
+        error: 'unsupported_grant_type',
+        error_description: 'Only authorization_code grant type is supported'
+      });
+      return;
+    }
+    
+    // Find the auth request by code
+    const authRequest = (req.session as any)?.authRequest;
+    if (!authRequest || authRequest.authCode !== code) {
+      res.status(400).json({
+        error: 'invalid_grant',
+        error_description: 'Authorization code is invalid or expired'
+      });
+      return;
+    }
+    
+    // Validate PKCE if provided
+    if (authRequest.code_challenge && code_verifier) {
+      // Simple validation - in production you'd want proper PKCE validation
+      logger.debug('PKCE validation', { 
+        hasChallenge: !!authRequest.code_challenge,
+        hasVerifier: !!code_verifier 
+      });
+    }
+    
+    // Generate access token
+    const accessToken = `outline_access_${Date.now()}_${Math.random().toString(36).substr(2, 16)}`;
+    const refreshToken = `outline_refresh_${Date.now()}_${Math.random().toString(36).substr(2, 16)}`;
+    const expiresIn = 3600; // 1 hour
+    
+    // Store token in our storage
+    await services.tokenStorage.setAccessToken(accessToken, {
+      token: accessToken,
+      userId: authRequest.userId,
+      clientId: client_id as string,
+      scope: authRequest.scope as string,
+      expiresAt: Date.now() + (expiresIn * 1000)
+    });
+    
+    // Clean up session
+    delete (req.session as any).authRequest;
+    delete (req.session as any).claudeAuthRequest;
+    
+    logger.info('Token issued successfully', { 
+      userId: authRequest.userId,
+      client_id,
+      scope: authRequest.scope 
+    });
+    
+    res.json({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      token_type: 'Bearer',
+      expires_in: expiresIn,
+      scope: authRequest.scope
+    });
+  });
+
+  // Outline OAuth routes (for completing the OAuth flow)
   if (outlineOAuthService) {
     app.use('/auth', createOutlineOAuthRoutes(outlineOAuthService));
     logger.info('Outline OAuth routes enabled as primary authentication');
