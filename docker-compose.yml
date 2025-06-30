@@ -6,23 +6,21 @@ services:
     ports:
       - "3131:3131"
     environment:
-      # Microsoft OAuth - REQUIRED
-      - MS_CLIENT_ID=${MS_CLIENT_ID}
-      - MS_CLIENT_SECRET=${MS_CLIENT_SECRET}
+      # Session Configuration - REQUIRED
       - SESSION_SECRET=${SESSION_SECRET}
-      - REDIRECT_URI=${REDIRECT_URI}
       
-      # Outline API - REQUIRED  
+      # Outline Configuration - REQUIRED  
       - OUTLINE_API_URL=${OUTLINE_API_URL}
-      - OUTLINE_API_TOKEN=${OUTLINE_API_TOKEN}
       
-      # Outline OAuth (for per-user authentication)
+      # Option 1: Outline OAuth (Recommended)
       - OUTLINE_OAUTH_CLIENT_ID=${OUTLINE_OAUTH_CLIENT_ID}
       - OUTLINE_OAUTH_CLIENT_SECRET=${OUTLINE_OAUTH_CLIENT_SECRET}
       - OUTLINE_OAUTH_REDIRECT_URI=${OUTLINE_OAUTH_REDIRECT_URI}
       
-      # Optional
-      - MS_TENANT=${MS_TENANT:-common}
+      # Option 2: Legacy API Token (Fallback)
+      - OUTLINE_API_TOKEN=${OUTLINE_API_TOKEN}
+      
+      # Server Configuration
       - PORT=3131
       - NODE_ENV=${NODE_ENV:-production}
       - REDIS_URL=redis://redis:6379

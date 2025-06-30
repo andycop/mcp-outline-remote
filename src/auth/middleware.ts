@@ -1,79 +1,79 @@
 import { Request, Response, NextFunction } from 'express';
 import { TokenStorage } from '../storage/tokens.js';
+import { OutlineOAuthService } from './outline-oauth.js';
 import { logger, anonymizeKey } from '../utils/logger.js';
 
 export class AuthMiddleware {
-  constructor(private storage: TokenStorage) {}
+  constructor(
+    private storage: TokenStorage,
+    private outlineOAuthService?: OutlineOAuthService
+  ) {}
 
   async ensureAuthenticated(req: Request, res: Response, next: NextFunction): Promise<void> {
-    // Option 1: Existing session (browsers)
-    if ((req.session as any)?.user) {
-      return next();
-    }
-    
-    // Option 2: Bearer token (MCP clients)
-    const authHeader = req.headers.authorization;
-    if (authHeader?.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
-      try {
-        const tokenData = await this.storage.getAccessToken(token);
-        if (!tokenData) {
-          logger.warn('Bearer token not found or expired', {
-            token: anonymizeKey(token)
-          });
-          res.status(401).json({ 
-            error: 'invalid_token',
-            error_description: 'The access token provided is expired, revoked, malformed, or invalid'
-          });
-          return;
-        }
-        
-        // Check if token is expired
-        if (tokenData.expiresAt < Date.now()) {
-          logger.warn('Bearer token expired', {
-            token: anonymizeKey(token),
-            expiresAt: new Date(tokenData.expiresAt).toISOString()
-          });
-          res.status(401).json({ 
-            error: 'invalid_token',
-            error_description: 'The access token has expired'
-          });
-          return;
-        }
-        
-        // For MCP clients, we'll set a minimal user object
+    // Check for Outline OAuth authentication in session
+    const sessionUserId = (req.session as any)?.outlineUserId;
+    if (sessionUserId) {
+      const outlineTokens = await this.storage.getOutlineTokens(sessionUserId);
+      if (outlineTokens) {
+        // Set user context for downstream handlers
         (req as any).user = {
-          oid: tokenData.userId,
-          name: 'MCP Client User',
-          email: 'mcp-client@example.com'
+          oid: sessionUserId,
+          name: 'Outline User',
+          email: 'outline-user@authenticated.com',
+          outlineTokens
         };
-        
-        logger.debug('Bearer token authentication successful', {
-          userId: anonymizeKey(tokenData.userId),
-          clientId: tokenData.clientId,
-          scope: tokenData.scope
-        });
-        
         return next();
-      } catch (error) {
-        logger.warn('Bearer token validation failed', {
-          token: anonymizeKey(token),
-          error: error instanceof Error ? error.message : 'Unknown error'
-        });
-        res.status(401).json({ 
-          error: 'invalid_token',
-          error_description: 'Token validation failed'
-        });
-        return;
       }
     }
     
-    // No valid auth
-    if (req.path.startsWith('/v1/')) {
-      res.status(401).json({ error: 'Authentication required' });
+    // For MCP endpoints, check if we have direct Outline authentication
+    if (req.path.startsWith('/v1/mcp')) {
+      // Check for session-based Outline auth
+      if (sessionUserId) {
+        const isAuthorized = await this.storage.isUserAuthorizedForOutline(sessionUserId);
+        if (isAuthorized) {
+          (req as any).user = {
+            oid: sessionUserId,
+            name: 'Outline User',
+            email: 'outline-user@authenticated.com'
+          };
+          return next();
+        }
+      }
+      
+      // No valid authentication for MCP
+      if (this.outlineOAuthService) {
+        res.status(401).json({ 
+          error: 'authentication_required',
+          error_description: 'Outline OAuth authentication required',
+          auth_url: `/auth/connect`
+        });
+      } else {
+        // Legacy token mode - check if we have a token configured
+        if (process.env.OUTLINE_API_TOKEN) {
+          // Allow access with legacy token
+          (req as any).user = {
+            oid: 'legacy-token-user',
+            name: 'Legacy Token User',
+            email: 'legacy@token.mode'
+          };
+          return next();
+        } else {
+          res.status(503).json({ 
+            error: 'service_unavailable',
+            error_description: 'No authentication method configured'
+          });
+        }
+      }
       return;
     }
     
-    res.redirect('/login');
+    // For web interface, redirect to Outline OAuth flow
+    if (this.outlineOAuthService) {
+      res.redirect('/auth/connect');
+    } else {
+      // Legacy token mode - show simple landing page
+      res.redirect('/');
+    }
   }
 }
