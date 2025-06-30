@@ -1,30 +1,48 @@
-# MCP Server Architecture
+# MCP Server Architecture v2
 
 ## Overview
-This MCP server implements OAuth 2.0 authentication with Microsoft Azure and provides a clean, modular structure while maintaining simplicity.
+This MCP server implements dual OAuth 2.0 authentication with Microsoft Azure and Outline, providing per-user authentication and a comprehensive modular structure for production deployment.
 
 ## Project Structure
 ```
 src/
-├── server-new.ts          # Main Express application (refactored)
+├── server.ts              # Main Express application with dual OAuth
 ├── auth/
-│   ├── oauth.ts           # OAuth 2.0 authorization server
-│   └── middleware.ts      # Authentication middleware
+│   ├── oauth.ts           # Microsoft OAuth 2.0 authorization server
+│   ├── middleware.ts      # Authentication middleware
+│   ├── outline-oauth.ts   # Outline OAuth 2.0 service
+│   └── outline-oauth-routes.ts # Outline OAuth route handlers
 ├── mcp/
-│   └── server.ts          # MCP server factory and management
+│   └── server.ts          # MCP server factory with user context
+├── tools/
+│   ├── documents/         # Document management tools (7 tools)
+│   │   ├── create.ts, delete.ts, get.ts, list.ts
+│   │   ├── move.ts, search.ts, update.ts
+│   └── collections/       # Collection management tools (5 tools)
+│       ├── create.ts, delete.ts, get.ts, list.ts, update.ts
 ├── storage/
-│   └── tokens.ts          # Token storage (Redis optional)
+│   └── tokens.ts          # Token storage (Redis optional, dual OAuth support)
+├── utils/
+│   ├── logger.ts          # Secure logging with anonymization
+│   └── outline-client.ts  # User-specific Outline API client factory
+├── types/
+│   └── context.ts         # User context and authentication types
+├── resources/
+│   └── outline-parameters.md # Comprehensive tool parameter documentation
 └── views/
-    └── index.html         # HTML template
+    └── index.html         # Enhanced web interface with OAuth status
 ```
 
 ## Key Features
 
 ### Modular Design
-- **OAuth Server** (`auth/oauth.ts`): Complete OAuth 2.0 authorization server with PKCE support
+- **Microsoft OAuth Server** (`auth/oauth.ts`): Complete OAuth 2.0 authorization server with PKCE support
+- **Outline OAuth Service** (`auth/outline-oauth.ts`): Per-user Outline authentication with refresh tokens
 - **Auth Middleware** (`auth/middleware.ts`): Session and Bearer token authentication
-- **MCP Manager** (`mcp/server.ts`): MCP protocol handling and session management
-- **Storage Layer** (`storage/tokens.ts`): Pluggable storage for tokens (in-memory or Redis)
+- **MCP Manager** (`mcp/server.ts`): MCP protocol handling with user context injection
+- **Storage Layer** (`storage/tokens.ts`): Pluggable storage for dual OAuth tokens (in-memory or Redis)
+- **Tool Architecture** (`tools/`): User-context aware tools with per-user API clients
+- **Type System** (`types/context.ts`): Comprehensive TypeScript definitions for user context
 
 ### Optional Redis Support
 The server automatically detects Redis configuration and falls back to in-memory storage:
@@ -32,32 +50,71 @@ The server automatically detects Redis configuration and falls back to in-memory
 - Without `REDIS_URL`, uses in-memory storage (development only)
 
 ### Environment Variables
-Required:
+
+#### Required - Microsoft OAuth
 - `MS_CLIENT_ID` - Microsoft Azure application client ID
 - `MS_CLIENT_SECRET` - Microsoft Azure application client secret  
+- `MS_TENANT` - Microsoft tenant ID (or 'common')
 - `SESSION_SECRET` - Express session secret
-- `REDIRECT_URI` - OAuth redirect URI
+- `REDIRECT_URI` - Microsoft OAuth redirect URI
+- `OUTLINE_API_URL` - Outline instance API base URL
 
-Optional:
-- `MS_TENANT` - Microsoft tenant ID (defaults to 'common')
+#### Outline Authentication (Choose One)
+**Option 1: Per-User OAuth (Recommended)**
+- `OUTLINE_OAUTH_CLIENT_ID` - Outline OAuth application client ID
+- `OUTLINE_OAUTH_CLIENT_SECRET` - Outline OAuth application client secret
+- `OUTLINE_OAUTH_REDIRECT_URI` - Outline OAuth redirect URI
+
+**Option 2: Shared API Token (Legacy)**
+- `OUTLINE_API_TOKEN` - Shared Outline API token
+
+#### Optional
 - `REDIS_URL` - Redis connection string for production storage
 - `NODE_ENV` - Environment (affects cookie security)
 - `PORT` - Server port (defaults to 3131)
 
-## Benefits of Refactoring
+## Dual Authentication Architecture
 
-### Before (server.ts)
-- Single 540-line file
-- Mixed concerns (OAuth + MCP + Express + HTML)
-- In-memory only storage
-- Difficult to test individual components
+### Authentication Layers
+1. **Microsoft OAuth (Primary)**: Controls access to the MCP server itself
+2. **Outline OAuth (Secondary)**: Per-user access to Outline workspace data
 
-### After (server-new.ts + modules)
-- Clean separation of concerns
-- Each module has single responsibility
-- Optional Redis support with graceful fallback
-- Easier to test, extend, and maintain
-- Template-based HTML rendering
+### User Context Flow
+```typescript
+interface UserContext {
+  userId: string;           // From Microsoft OAuth (user.oid)
+  outlineClient: OutlineApiClient;  // User-specific API client
+}
+```
+
+### Token Storage Design
+- **Microsoft Tokens**: Stored in session cookies (short-lived)
+- **Outline Tokens**: Stored in Redis/memory per user ID (persistent)
+- **Automatic Refresh**: Both OAuth implementations handle token refresh
+- **Isolation**: Each user's Outline tokens are completely separate
+
+### Tool Architecture
+All MCP tools now receive a `UserContext` parameter:
+```typescript
+export async function searchDocumentsHandler(
+  args: SearchDocumentsArgs, 
+  context: UserContext
+): Promise<SearchDocumentsResult>
+```
+
+## Evolution of the Architecture
+
+### v1 (Original)
+- Single shared Outline API token
+- All users acted as the same Outline user
+- Simple but limited security model
+
+### v2 (Current)
+- Per-user Outline authentication via OAuth
+- Each user accesses their own Outline workspace
+- Enhanced security with token isolation
+- Comprehensive logging with data anonymization
+- Production-ready with Redis persistence
 
 ## Running the Server
 
