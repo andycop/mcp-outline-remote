@@ -17,18 +17,17 @@ export function createOutlineOAuthRoutes(oauthService: OutlineOAuthService): Rou
   const router = Router();
 
   /**
-   * Connect user to Outline OAuth
-   * GET /auth/outline/connect
+   * Connect user to Outline OAuth (Primary Authentication)
+   * GET /auth/connect
    */
   router.get('/connect', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const user = req.session?.user || req.user;
-      if (!user) {
-        res.status(401).json({ error: 'Not authenticated' });
-        return;
+      // Generate a session-based user ID if none exists
+      let userId = req.session?.outlineUserId;
+      if (!userId) {
+        userId = `outline-user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        req.session.outlineUserId = userId;
       }
-
-      const userId = user.oid; // Microsoft oid
       
       // Check if already connected
       const isAuthorized = await oauthService.isUserAuthorized(userId);

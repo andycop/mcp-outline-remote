@@ -10,7 +10,6 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
-import { OAuthServer } from './auth/oauth.js';
 import { AuthMiddleware } from './auth/middleware.js';
 import { OutlineOAuthService } from './auth/outline-oauth.js';
 import { createOutlineOAuthRoutes } from './auth/outline-oauth-routes.js';
@@ -29,7 +28,9 @@ const PORT = parseInt(process.env.PORT || '3131', 10);
 app.set('trust proxy', true);
 
 // Validate required environment variables
-const requiredEnvVars = ['MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'SESSION_SECRET', 'REDIRECT_URI'];
+const requiredEnvVars = ['SESSION_SECRET', 'OUTLINE_API_URL'];
+const outlineOAuthVars = ['OUTLINE_OAUTH_CLIENT_ID', 'OUTLINE_OAUTH_CLIENT_SECRET', 'OUTLINE_OAUTH_REDIRECT_URI'];
+
 for (const envVar of requiredEnvVars) {
   if (!process.env[envVar]) {
     logger.error(`Missing required environment variable: ${envVar}`);
@@ -37,59 +38,64 @@ for (const envVar of requiredEnvVars) {
   }
 }
 
+// Check for Outline authentication configuration
+const hasOutlineOAuth = outlineOAuthVars.every(envVar => process.env[envVar]);
+const hasOutlineToken = !!process.env.OUTLINE_API_TOKEN;
+
+if (!hasOutlineOAuth && !hasOutlineToken) {
+  logger.error('Missing Outline authentication configuration. Required either:', {
+    oauth: 'OUTLINE_OAUTH_CLIENT_ID, OUTLINE_OAUTH_CLIENT_SECRET, OUTLINE_OAUTH_REDIRECT_URI',
+    token: 'OUTLINE_API_TOKEN (legacy mode)'
+  });
+  process.exit(1);
+}
+
 // Initialize services (async initialization)
 async function initializeServices() {
   const tokenStorage = await createTokenStorage();
-  const authMiddleware = new AuthMiddleware(tokenStorage);
-
-  // Initialize Outline OAuth service if configured
+  
+  // Initialize Outline OAuth service (required for OAuth mode)
   let outlineOAuthService: OutlineOAuthService | undefined;
-  if (process.env.OUTLINE_OAUTH_CLIENT_ID && process.env.OUTLINE_OAUTH_CLIENT_SECRET && process.env.OUTLINE_API_URL) {
+  if (hasOutlineOAuth) {
     outlineOAuthService = new OutlineOAuthService({
-      clientId: process.env.OUTLINE_OAUTH_CLIENT_ID,
-      clientSecret: process.env.OUTLINE_OAUTH_CLIENT_SECRET,
-      redirectUri: process.env.OUTLINE_OAUTH_REDIRECT_URI || process.env.REDIRECT_URI!,
-      baseUrl: process.env.OUTLINE_API_URL.replace('/api', '') // Remove /api suffix for OAuth endpoints
+      clientId: process.env.OUTLINE_OAUTH_CLIENT_ID!,
+      clientSecret: process.env.OUTLINE_OAUTH_CLIENT_SECRET!,
+      redirectUri: process.env.OUTLINE_OAUTH_REDIRECT_URI!,
+      baseUrl: process.env.OUTLINE_API_URL!.replace('/api', '') // Remove /api suffix for OAuth endpoints
     }, tokenStorage);
     
-    logger.info('Outline OAuth service initialized', {
-      clientId: process.env.OUTLINE_OAUTH_CLIENT_ID.substring(0, 8) + '...',
-      baseUrl: process.env.OUTLINE_API_URL.replace('/api', '')
+    logger.info('Outline OAuth service initialized (primary authentication)', {
+      clientId: process.env.OUTLINE_OAUTH_CLIENT_ID!.substring(0, 8) + '...',
+      baseUrl: process.env.OUTLINE_API_URL!.replace('/api', '')
     });
   } else {
-    logger.warn('Outline OAuth not configured - missing required environment variables', {
-      hasClientId: !!process.env.OUTLINE_OAUTH_CLIENT_ID,
-      hasClientSecret: !!process.env.OUTLINE_OAUTH_CLIENT_SECRET,
-      hasApiUrl: !!process.env.OUTLINE_API_URL
+    logger.info('Using Outline API token authentication (legacy mode)', {
+      hasToken: hasOutlineToken,
+      apiUrl: process.env.OUTLINE_API_URL
     });
   }
+
+  // Initialize authentication middleware with Outline OAuth as primary
+  const authMiddleware = new AuthMiddleware(tokenStorage, outlineOAuthService);
 
   // Initialize Outline API client
   const outlineApiClient = createOutlineApiClient(tokenStorage, outlineOAuthService);
 
   const mcpManager = new McpServerManager(outlineApiClient);
 
-  const oauthServer = new OAuthServer({
-    clientId: process.env.MS_CLIENT_ID!,
-    clientSecret: process.env.MS_CLIENT_SECRET!,
-    tenant: process.env.MS_TENANT || 'common',
-    redirectUri: process.env.REDIRECT_URI!
-  }, tokenStorage);
-
   return {
     tokenStorage,
     authMiddleware,
     outlineOAuthService,
     outlineApiClient,
-    mcpManager,
-    oauthServer
+    mcpManager
   };
 }
 
 // Main server initialization
 async function startServer() {
   const services = await initializeServices();
-  const { authMiddleware, outlineOAuthService, mcpManager, oauthServer } = services;
+  const { authMiddleware, outlineOAuthService, mcpManager } = services;
 
   // Express middleware
   app.use(helmet());
@@ -108,18 +114,15 @@ async function startServer() {
     }
   }));
 
-  // OAuth routes
-  app.use('/', oauthServer.getRouter());
-
-  // Outline OAuth routes (if configured)
+  // Outline OAuth routes (primary authentication)
   if (outlineOAuthService) {
-    app.use('/auth/outline', createOutlineOAuthRoutes(outlineOAuthService));
-    logger.info('Outline OAuth routes enabled');
+    app.use('/auth', createOutlineOAuthRoutes(outlineOAuthService));
+    logger.info('Outline OAuth routes enabled as primary authentication');
   }
 
-  // Outline authentication info routes (fallback when OAuth not configured)
+  // Legacy token mode routes (when OAuth not configured)
   if (!outlineOAuthService) {
-    app.get('/auth/outline/status', authMiddleware.ensureAuthenticated.bind(authMiddleware), (req, res) => {
+    app.get('/auth/status', (req, res) => {
       const hasToken = !!process.env.OUTLINE_API_TOKEN;
       res.json({
         status: hasToken ? 'configured' : 'not_configured',
@@ -127,53 +130,11 @@ async function startServer() {
         connected: hasToken,
         message: hasToken 
           ? 'Outline API configured with Personal Access Token (shared across all users)'
-          : 'Outline API not configured. Set OUTLINE_API_TOKEN environment variable or configure OAuth.',
-        note: 'OAuth not configured. Using Personal Access Token fallback.',
-        oauth_setup: {
-          available: true,
-          required_env_vars: [
-            'OUTLINE_OAUTH_CLIENT_ID',
-            'OUTLINE_OAUTH_CLIENT_SECRET', 
-            'OUTLINE_OAUTH_REDIRECT_URI (or uses REDIRECT_URI)'
-          ]
-        },
+          : 'Outline API not configured. Set OUTLINE_API_TOKEN environment variable.',
         setup_guide: hasToken 
           ? 'Token configured successfully. All users will act as the token owner in Outline.'
-          : 'Either: 1) Set up OAuth (recommended) or 2) Generate a Personal Access Token in Outline Settings → API Tokens'
+          : 'Generate a Personal Access Token in Outline Settings → API Tokens and set OUTLINE_API_TOKEN environment variable'
       });
-    });
-  }
-  
-  if (!outlineOAuthService) {
-    app.get('/auth/outline/connect', authMiddleware.ensureAuthenticated.bind(authMiddleware), (req, res) => {
-      const hasToken = !!process.env.OUTLINE_API_TOKEN;
-      if (hasToken) {
-        res.json({
-          status: 'already_configured',
-          message: 'Outline API is already configured with a Personal Access Token.',
-          note: 'OAuth not configured. Using Personal Access Token fallback.',
-          oauth_available: 'Set OUTLINE_OAUTH_CLIENT_ID and OUTLINE_OAUTH_CLIENT_SECRET to enable per-user OAuth'
-        });
-      } else {
-        res.status(503).json({
-          error: 'Service not configured',
-          message: 'Outline API not configured. Configure OAuth or set Personal Access Token.',
-          instructions: [
-            'Option 1 (Recommended): Configure OAuth',
-            '- Set OUTLINE_OAUTH_CLIENT_ID environment variable',
-            '- Set OUTLINE_OAUTH_CLIENT_SECRET environment variable',
-            '- Set OUTLINE_OAUTH_REDIRECT_URI environment variable',
-            '- Restart the MCP server',
-            '',
-            'Option 2: Use Personal Access Token',
-            '- Log into your Outline instance',
-            '- Go to Settings → API Tokens',
-            '- Create a new Personal Access Token',
-            '- Set OUTLINE_API_TOKEN environment variable',
-            '- Restart the MCP server'
-          ]
-        });
-      }
     });
   }
 
@@ -187,29 +148,34 @@ async function startServer() {
 
   // Protected status endpoint
   app.get('/status', authMiddleware.ensureAuthenticated.bind(authMiddleware), async (req, res) => {
-    const user = (req.session as any).user || (req as any).user;
+    const user = (req as any).user;
+    const userId = user?.oid;
     
     const hasOutlineToken = !!process.env.OUTLINE_API_TOKEN;
     const hasOAuthService = !!outlineOAuthService;
     
+    let userOutlineStatus = false;
+    if (hasOAuthService && userId) {
+      userOutlineStatus = await outlineOAuthService.isUserAuthorized(userId);
+    }
+    
     const outlineStatus = {
-      connected: hasOutlineToken || hasOAuthService,
+      connected: hasOutlineToken || userOutlineStatus,
       configured: hasOutlineToken || hasOAuthService,
       authentication_method: hasOAuthService ? 'oauth2' : 'personal_access_token',
+      user_connected: userOutlineStatus,
       oauth_enabled: hasOAuthService,
       message: hasOAuthService 
-        ? 'Outline OAuth configured - per-user authentication available'
+        ? `User ${userOutlineStatus ? 'connected' : 'not connected'} to Outline via OAuth`
         : hasOutlineToken 
-          ? 'Outline API configured (Personal Access Token fallback)'
-          : 'Outline API not configured',
-      note: hasOAuthService 
-        ? 'Users can connect their individual Outline accounts via OAuth'
-        : 'OAuth not configured. Using Personal Access Token fallback (shared across all users).'
+          ? 'Using shared Outline API token'
+          : 'Outline API not configured'
     };
     
     res.json({
       authenticated: true,
       user: {
+        id: userId,
         name: user.name,
         email: user.email
       },
@@ -219,23 +185,43 @@ async function startServer() {
   });
 
   // Landing page
-  app.get('/', (req, res) => {
-    const user = (req.session as any)?.user;
+  app.get('/', async (req, res) => {
+    const sessionUserId = (req.session as any)?.outlineUserId;
     const template = readFileSync(join(__dirname, 'views', 'index.html'), 'utf-8');
     
-    const statusSection = user 
-      ? `<div class="status authenticated">
-           <strong>✓ Authenticated</strong><br>
-           Welcome, ${user.name || user.email}!<br>
-           <a href="/logout" class="button logout">Logout</a>
-           <a href="/status" class="button info">Status</a>
-           <a href="/auth/outline/status" class="button ${outlineOAuthService ? 'outline' : process.env.OUTLINE_API_TOKEN ? 'outline' : 'info'}">${outlineOAuthService ? 'Outline OAuth' : 'Outline API'}</a>
-         </div>`
-      : `<div class="status unauthenticated">
+    let statusSection;
+    
+    if (outlineOAuthService) {
+      if (sessionUserId) {
+        const isConnected = await outlineOAuthService.isUserAuthorized(sessionUserId);
+        statusSection = isConnected 
+          ? `<div class="status authenticated">
+               <strong>✓ Connected to Outline</strong><br>
+               You are authenticated with your Outline workspace.<br>
+               <a href="/status" class="button info">Status</a>
+               <a href="/auth/disconnect" class="button logout">Disconnect</a>
+             </div>`
+          : `<div class="status unauthenticated">
+               <strong>⚠ Outline Not Connected</strong><br>
+               Connect to your Outline workspace to use MCP tools.<br>
+               <a href="/auth/connect" class="button login">Connect to Outline</a>
+             </div>`;
+      } else {
+        statusSection = `<div class="status unauthenticated">
            <strong>✗ Not Authenticated</strong><br>
-           Please log in to access the MCP server.<br>
-           <a href="/login" class="button login">Login with MS365</a>
+           Connect to your Outline workspace to access MCP tools.<br>
+           <a href="/auth/connect" class="button login">Connect to Outline</a>
          </div>`;
+      }
+    } else {
+      // Legacy token mode
+      const hasToken = !!process.env.OUTLINE_API_TOKEN;
+      statusSection = `<div class="status ${hasToken ? 'authenticated' : 'unauthenticated'}">
+         <strong>${hasToken ? '✓ API Token Mode' : '✗ Not Configured'}</strong><br>
+         ${hasToken ? 'Using shared Outline API token.' : 'No authentication configured.'}<br>
+         <a href="/auth/status" class="button info">Status</a>
+       </div>`;
+    }
     
     const html = template.replace('{{STATUS_SECTION}}', statusSection);
     res.send(html);
