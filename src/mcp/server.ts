@@ -8,7 +8,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { OutlineApiClient } from '../utils/outline-client.js';
 import { UserContext } from '../types/context.js';
-import { logger, anonymizeKey } from '../utils/logger.js';
+import { mcpLogger as logger } from '../lib/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -103,7 +103,17 @@ export class McpServerManager {
 
     // Collection tools (all now using OAuth authentication)
     server.tool('list_collections', 'List all collections', listCollectionsSchema, 
-      async (args) => listCollectionsHandler(args, userContext));
+      async (args) => {
+        logger.info('list_collections tool called', { args });
+        const result = await listCollectionsHandler(args, userContext);
+        logger.info('list_collections result', { 
+          resultType: typeof result,
+          hasContent: !!result?.content,
+          contentLength: result?.content?.length,
+          firstItem: result?.content?.[0]
+        });
+        return result;
+      });
     server.tool('create_collection', 'Create a new collection with optional styling (icon: emoji like 📁, color: hex like #FF6B6B)', createCollectionSchema, 
       async (args) => createCollectionHandler(args, userContext));
     server.tool('get_collection', 'Get a collection by ID', getCollectionSchema, 
@@ -124,7 +134,7 @@ export class McpServerManager {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
     
     logger.debug('MCP POST request', {
-      sessionId: sessionId ? anonymizeKey(sessionId) : 'none',
+      sessionId: sessionId || 'none',
       method: req.body?.method || 'unknown',
       hasBody: !!req.body
     });
@@ -135,7 +145,7 @@ export class McpServerManager {
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (sessionId: string) => {
-          logger.info('MCP session initialized', { sessionId: anonymizeKey(sessionId) });
+          logger.info('MCP session initialized', { sessionId });
           this.transports[sessionId] = transport;
         }
       });
@@ -144,10 +154,10 @@ export class McpServerManager {
       await server.connect(transport);
       await transport.handleRequest(req, res, req.body);
     } else if (sessionId && this.transports[sessionId]) {
-      logger.debug('Using existing MCP session', { sessionId: anonymizeKey(sessionId) });
+      logger.debug('Using existing MCP session', { sessionId });
       await this.transports[sessionId].handleRequest(req, res, req.body);
     } else {
-      logger.warn('No valid MCP session found', { sessionId: sessionId ? anonymizeKey(sessionId) : 'none' });
+      logger.warn('No valid MCP session found', { sessionId: sessionId || 'none' });
       res.status(400).json({ error: 'Invalid session' });
     }
   }
@@ -156,14 +166,14 @@ export class McpServerManager {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
     
     logger.debug('MCP GET request for SSE', { 
-      sessionId: sessionId ? anonymizeKey(sessionId) : 'none' 
+      sessionId: sessionId || 'none' 
     });
     
     if (sessionId && this.transports[sessionId]) {
-      logger.debug('SSE connection established', { sessionId: anonymizeKey(sessionId) });
+      logger.debug('SSE connection established', { sessionId });
       await this.transports[sessionId].handleRequest(req, res);
     } else {
-      logger.warn('No valid session for SSE', { sessionId: sessionId ? anonymizeKey(sessionId) : 'none' });
+      logger.warn('No valid session for SSE', { sessionId: sessionId || 'none' });
       res.status(400).json({ error: 'Invalid session' });
     }
   }
@@ -180,12 +190,12 @@ export class McpServerManager {
     
     for (const sessionId in this.transports) {
       try {
-        logger.debug('Closing MCP transport', { sessionId: anonymizeKey(sessionId) });
+        logger.debug('Closing MCP transport', { sessionId });
         await this.transports[sessionId].close();
         delete this.transports[sessionId];
       } catch (error) {
         logger.error('Error closing MCP transport', { 
-          sessionId: anonymizeKey(sessionId),
+          sessionId,
           error: error instanceof Error ? error.message : 'Unknown error'
         });
       }

@@ -1,7 +1,7 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import { TokenStorage } from '../storage/tokens.js';
 import { OutlineOAuthService, OutlineNotAuthorizedException } from '../auth/outline-oauth.js';
-import { logger } from './logger.js';
+import { apiLogger as logger } from '../lib/logger.js';
 
 export interface OutlineApiRequestOptions extends AxiosRequestConfig {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -48,6 +48,8 @@ export class OutlineApiClient {
     endpoint: string, 
     options: OutlineApiRequestOptions = {}
   ): Promise<any> {
+    const startTime = Date.now();
+    
     try {
       // Try to get user's OAuth token first
       let accessToken: string | null = null;
@@ -89,13 +91,25 @@ export class OutlineApiClient {
         }
       };
 
-      const response = await this.httpClient.request(config);
-      
-      logger.debug('Outline API request successful', {
+      // Log request details
+      logger.info('Making Outline API request', {
         userId,
         endpoint,
         method: options.method || 'GET',
-        status: response.status
+        hasData: !!options.data,
+        timeout: config.timeout || 30000
+      });
+
+      const response = await this.httpClient.request(config);
+      const duration = Date.now() - startTime;
+      
+      logger.info('Outline API request successful', {
+        userId,
+        endpoint,
+        method: options.method || 'GET',
+        status: response.status,
+        duration: `${duration}ms`,
+        responseSize: JSON.stringify(response.data).length
       });
 
       return response;
@@ -104,12 +118,16 @@ export class OutlineApiClient {
         throw error; // Re-throw authorization errors
       }
 
+      const duration = Date.now() - startTime;
       logger.error('Outline API request failed', {
         userId,
         endpoint,
         method: options.method || 'GET',
         status: error.response?.status,
-        message: error.message
+        message: error.message,
+        duration: `${duration}ms`,
+        code: error.code,
+        isTimeout: error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT'
       });
 
       // Check if it's an authorization error

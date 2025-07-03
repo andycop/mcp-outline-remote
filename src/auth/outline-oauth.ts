@@ -1,7 +1,7 @@
 import { randomBytes, createHash } from 'crypto';
 import axios, { AxiosInstance } from 'axios';
 import { TokenStorage, OutlineTokenData } from '../storage/tokens.js';
-import { logger } from '../utils/logger.js';
+import { authLogger as logger } from '../lib/logger.js';
 
 export interface OutlineOAuthConfig {
   clientId: string;
@@ -110,6 +110,14 @@ export class OutlineOAuthService {
       });
 
       const tokenData = response.data;
+
+      logger.info('Token exchange response from Outline', {
+        status: response.status,
+        hasData: !!tokenData,
+        dataType: typeof tokenData,
+        dataKeys: tokenData ? Object.keys(tokenData) : [],
+        rawData: JSON.stringify(tokenData)
+      });
 
       if (!tokenData.access_token) {
         throw new Error('No access token received from Outline');

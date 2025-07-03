@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { TokenStorage } from '../storage/tokens.js';
 import { OutlineOAuthService } from './outline-oauth.js';
 import { OutlineApiClient } from '../utils/outline-client.js';
-import { logger, anonymizeKey } from '../utils/logger.js';
+import { authLogger as logger } from '../lib/logger.js';
 
 export class AuthMiddleware {
   constructor(
@@ -90,7 +90,10 @@ export class AuthMiddleware {
           };
           return next();
         } else {
-          logger.warn('Invalid or expired access token for MCP request');
+          logger.warn('Invalid or expired access token for MCP request', {
+            tokenPrefix: accessToken ? accessToken.substring(0, 20) + '...' : 'none',
+            hasToken: !!accessToken
+          });
           res.status(401).json({
             error: 'invalid_token',
             error_description: 'Access token is invalid or expired'

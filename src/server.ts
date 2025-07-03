@@ -16,7 +16,7 @@ import { createOutlineOAuthRoutes } from './auth/outline-oauth-routes.js';
 import { McpServerManager } from './mcp/server.js';
 import { createTokenStorage } from './storage/tokens.js';
 import { createOutlineApiClient } from './utils/outline-client.js';
-import { logger, anonymizeKey } from './utils/logger.js';
+import { serverLogger as logger } from './lib/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -460,7 +460,16 @@ async function startServer() {
   });
 
   // MCP endpoints (protected)
-  app.post('/v1/mcp', authMiddleware.ensureAuthenticated.bind(authMiddleware), (req, res) => {
+  app.post('/v1/mcp', (req, res, next) => {
+    logger.info('MCP POST request received', {
+      hasAuth: !!req.headers.authorization,
+      authPrefix: req.headers.authorization?.substring(0, 30),
+      contentType: req.headers['content-type'],
+      method: req.body?.method,
+      bodyPreview: req.body ? JSON.stringify(req.body).substring(0, 200) : 'no body'
+    });
+    next();
+  }, authMiddleware.ensureAuthenticated.bind(authMiddleware), (req, res) => {
     mcpManager.handlePost(req, res);
   });
 
@@ -483,7 +492,7 @@ async function startServer() {
     });
     
     logger.info('Outline OAuth Configuration Status', {
-      clientId: process.env.OUTLINE_OAUTH_CLIENT_ID ? anonymizeKey(process.env.OUTLINE_OAUTH_CLIENT_ID) : '✗ Missing',
+      clientId: process.env.OUTLINE_OAUTH_CLIENT_ID ? 'Set' : '✗ Missing',
       clientSecret: process.env.OUTLINE_OAUTH_CLIENT_SECRET ? '✓ Set' : '✗ Missing',
       redirectUri: process.env.OUTLINE_OAUTH_REDIRECT_URI || '✗ Missing',
       baseUrl: process.env.OUTLINE_API_URL?.replace('/api', '') || '✗ Missing'

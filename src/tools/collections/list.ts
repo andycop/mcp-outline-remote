@@ -2,6 +2,7 @@ import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { OutlineNotAuthorizedException } from '../../auth/outline-oauth.js';
 import { UserContext } from '../../types/context.js';
+import { toolsLogger as logger } from '../../lib/logger.js';
 
 export const listCollectionsSchema = {
   offset: z.number().optional().describe('The offset to start listing collections from'),
@@ -24,6 +25,13 @@ export async function listCollectionsHandler(
         limit,
       }
     });
+    
+    logger.debug('Outline API response', { response: JSON.stringify(response.data).substring(0, 200) });
+    
+    // Check if response has data
+    if (!response.data || !response.data.data) {
+      throw new Error('Invalid response from Outline API');
+    }
     
     return {
       content: [

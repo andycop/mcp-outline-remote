@@ -6,7 +6,10 @@
   "scripts": {
     "build": "tsc && cp -r src/views dist/",
     "start": "node dist/server.js",
+    "start:debug": "LOG_LEVEL=debug node dist/server.js",
     "dev": "tsx watch src/server.ts",
+    "dev:debug": "LOG_LEVEL=debug tsx watch src/server.ts",
+    "dev:trace": "LOG_LEVEL=trace tsx watch src/server.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -14,7 +17,6 @@
   "license": "ISC",
   "description": "MCP Outline Remote Server v3 with streamlined Outline OAuth authentication and Claude.ai integration",
   "dependencies": {
-    "@azure/msal-node": "^3.6.1",
     "@modelcontextprotocol/sdk": "^1.13.1",
     "axios": "^1.10.0",
     "cors": "^2.8.5",
@@ -23,6 +25,8 @@
     "express-session": "^1.18.1",
     "helmet": "^8.1.0",
     "jose": "^6.0.11",
+    "pino": "^9.7.0",
+    "pino-pretty": "^13.0.0",
     "zod": "^3.25.67"
   },
   "optionalDependencies": {

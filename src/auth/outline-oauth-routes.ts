@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { OutlineOAuthService, OutlineNotAuthorizedException } from './outline-oauth.js';
 import { TokenStorage } from '../storage/tokens.js';
-import { logger } from '../utils/logger.js';
+import { authLogger as logger } from '../lib/logger.js';
 
 interface AuthenticatedRequest extends Request {
   session: any;
