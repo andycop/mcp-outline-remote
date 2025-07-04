@@ -3,12 +3,14 @@ import { TokenStorage } from '../storage/tokens.js';
 import { OutlineOAuthService } from './outline-oauth.js';
 import { OutlineApiClient } from '../utils/outline-client.js';
 import { authLogger as logger } from '../lib/logger.js';
+import { McpServerManager } from '../mcp/server.js';
 
 export class AuthMiddleware {
   constructor(
     private storage: TokenStorage,
     private outlineClient: OutlineApiClient,
-    private outlineOAuthService?: OutlineOAuthService
+    private outlineOAuthService?: OutlineOAuthService,
+    private mcpServerManager?: McpServerManager
   ) {}
 
   async ensureAuthenticated(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -26,6 +28,13 @@ export class AuthMiddleware {
               userId: tokenData.userId,
               expiresAt: new Date(tokenData.expiresAt).toISOString()
             });
+            
+            // Close MCP transport to notify Claude.ai
+            const sessionId = req.headers['mcp-session-id'] as string | undefined;
+            if (sessionId && this.mcpServerManager) {
+              await this.mcpServerManager.closeTransport(sessionId, 'Access token expired');
+            }
+            
             res.status(401).json({
               error: 'invalid_token',
               error_description: 'Access token has expired. Please reconnect your Outline account.'
@@ -61,6 +70,13 @@ export class AuthMiddleware {
                 realUserId,
                 error: error instanceof Error ? error.message : String(error)
               });
+              
+              // Close MCP transport to notify Claude.ai
+              const sessionId = req.headers['mcp-session-id'] as string | undefined;
+              if (sessionId && this.mcpServerManager) {
+                await this.mcpServerManager.closeTransport(sessionId, 'Outline authentication failed');
+              }
+              
               res.status(401).json({
                 error: 'outline_auth_required',
                 error_description: 'Please connect your Outline account first. Visit /auth/outline/connect to authorize.'
@@ -94,6 +110,13 @@ export class AuthMiddleware {
             tokenPrefix: accessToken ? accessToken.substring(0, 20) + '...' : 'none',
             hasToken: !!accessToken
           });
+          
+          // Close MCP transport to notify Claude.ai
+          const sessionId = req.headers['mcp-session-id'] as string | undefined;
+          if (sessionId && this.mcpServerManager) {
+            await this.mcpServerManager.closeTransport(sessionId, 'Invalid access token');
+          }
+          
           res.status(401).json({
             error: 'invalid_token',
             error_description: 'Access token is invalid or expired'

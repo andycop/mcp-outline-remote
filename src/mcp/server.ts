@@ -29,12 +29,120 @@ import { getCollectionSchema, getCollectionHandler } from '../tools/collections/
 import { updateCollectionSchema, updateCollectionHandler } from '../tools/collections/update.js';
 import { deleteCollectionSchema, deleteCollectionHandler } from '../tools/collections/delete.js';
 
+interface TransportSession {
+  transport: StreamableHTTPServerTransport;
+  lastActivity: number;
+  userId?: string;
+}
+
 export class McpServerManager {
-  private transports: Record<string, StreamableHTTPServerTransport> = {};
+  private transports: Record<string, TransportSession> = {};
   private outlineClient: OutlineApiClient;
+  private cleanupInterval: NodeJS.Timeout | null = null;
+  private healthCheckInterval: NodeJS.Timeout | null = null;
+  private readonly SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+  private readonly CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+  private readonly HEALTH_CHECK_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
 
   constructor(outlineClient: OutlineApiClient) {
     this.outlineClient = outlineClient;
+    this.startCleanupTimer();
+    this.startHealthCheckTimer();
+  }
+
+  private startCleanupTimer(): void {
+    // Run cleanup every 5 minutes
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupInactiveSessions();
+    }, this.CLEANUP_INTERVAL_MS);
+
+    logger.info('Session cleanup timer started', { 
+      intervalMs: this.CLEANUP_INTERVAL_MS,
+      timeoutMs: this.SESSION_TIMEOUT_MS 
+    });
+  }
+
+  private startHealthCheckTimer(): void {
+    // Run health checks every 2 minutes
+    this.healthCheckInterval = setInterval(() => {
+      this.performHealthChecks();
+    }, this.HEALTH_CHECK_INTERVAL_MS);
+
+    logger.info('Session health check timer started', { 
+      intervalMs: this.HEALTH_CHECK_INTERVAL_MS 
+    });
+  }
+
+  private async performHealthChecks(): Promise<void> {
+    const activeSessions = Object.entries(this.transports);
+    if (activeSessions.length === 0) return;
+
+    logger.debug('Performing health checks on active sessions', { 
+      count: activeSessions.length 
+    });
+
+    for (const [sessionId, session] of activeSessions) {
+      try {
+        // Check if the user is still authorized
+        if (session.userId && session.userId !== 'unknown' && session.userId !== 'legacy-token-user') {
+          const isAuthorized = await this.outlineClient.isUserAuthenticated(session.userId);
+          
+          if (!isAuthorized) {
+            logger.warn('Session health check failed - user not authorized', { 
+              sessionId, 
+              userId: session.userId 
+            });
+            await this.closeTransport(sessionId, 'Health check failed - authorization lost');
+          }
+        }
+      } catch (error) {
+        logger.error('Error during session health check', { 
+          sessionId,
+          userId: session.userId,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+  }
+
+  private async cleanupInactiveSessions(): Promise<void> {
+    const now = Date.now();
+    const sessionsToClean: string[] = [];
+
+    for (const [sessionId, session] of Object.entries(this.transports)) {
+      const inactiveTime = now - session.lastActivity;
+      if (inactiveTime > this.SESSION_TIMEOUT_MS) {
+        sessionsToClean.push(sessionId);
+      }
+    }
+
+    if (sessionsToClean.length > 0) {
+      logger.info('Cleaning up inactive sessions', { 
+        count: sessionsToClean.length,
+        sessionIds: sessionsToClean 
+      });
+
+      for (const sessionId of sessionsToClean) {
+        await this.closeTransport(sessionId, 'Session timeout due to inactivity');
+      }
+    }
+  }
+
+  async closeTransport(sessionId: string, reason: string): Promise<void> {
+    const session = this.transports[sessionId];
+    if (!session) return;
+
+    try {
+      logger.info('Closing MCP transport', { sessionId, reason, userId: session.userId });
+      await session.transport.close();
+      delete this.transports[sessionId];
+    } catch (error) {
+      logger.error('Error closing MCP transport', { 
+        sessionId,
+        reason,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
   }
 
   createServer(req: Request): McpServer {
@@ -145,8 +253,15 @@ export class McpServerManager {
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (sessionId: string) => {
-          logger.info('MCP session initialized', { sessionId });
-          this.transports[sessionId] = transport;
+          const user = (req as any).user;
+          const userId = user?.oid || 'unknown';
+          
+          logger.info('MCP session initialized', { sessionId, userId });
+          this.transports[sessionId] = {
+            transport,
+            lastActivity: Date.now(),
+            userId
+          };
         }
       });
 
@@ -155,7 +270,9 @@ export class McpServerManager {
       await transport.handleRequest(req, res, req.body);
     } else if (sessionId && this.transports[sessionId]) {
       logger.debug('Using existing MCP session', { sessionId });
-      await this.transports[sessionId].handleRequest(req, res, req.body);
+      // Update last activity
+      this.transports[sessionId].lastActivity = Date.now();
+      await this.transports[sessionId].transport.handleRequest(req, res, req.body);
     } else {
       logger.warn('No valid MCP session found', { sessionId: sessionId || 'none' });
       res.status(400).json({ error: 'Invalid session' });
@@ -171,7 +288,9 @@ export class McpServerManager {
     
     if (sessionId && this.transports[sessionId]) {
       logger.debug('SSE connection established', { sessionId });
-      await this.transports[sessionId].handleRequest(req, res);
+      // Update last activity
+      this.transports[sessionId].lastActivity = Date.now();
+      await this.transports[sessionId].transport.handleRequest(req, res);
     } else {
       logger.warn('No valid session for SSE', { sessionId: sessionId || 'none' });
       res.status(400).json({ error: 'Invalid session' });
@@ -188,17 +307,58 @@ export class McpServerManager {
       logger.info(`Closing ${sessionCount} MCP transport sessions`);
     }
     
+    // Stop timers
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    }
+    
     for (const sessionId in this.transports) {
-      try {
-        logger.debug('Closing MCP transport', { sessionId });
-        await this.transports[sessionId].close();
-        delete this.transports[sessionId];
-      } catch (error) {
-        logger.error('Error closing MCP transport', { 
-          sessionId,
-          error: error instanceof Error ? error.message : 'Unknown error'
-        });
+      await this.closeTransport(sessionId, 'Server shutdown');
+    }
+  }
+
+  // Method to get session information for monitoring
+  getSessionInfo(): Array<{ sessionId: string; userId?: string; lastActivity: Date; inactive: number }> {
+    const now = Date.now();
+    return Object.entries(this.transports).map(([sessionId, session]) => ({
+      sessionId,
+      userId: session.userId,
+      lastActivity: new Date(session.lastActivity),
+      inactive: Math.floor((now - session.lastActivity) / 1000) // seconds
+    }));
+  }
+
+  // Close all sessions for a specific user (e.g., on auth failure)
+  async closeUserSessions(userId: string, reason: string): Promise<void> {
+    const sessionsToClose: string[] = [];
+    
+    for (const [sessionId, session] of Object.entries(this.transports)) {
+      if (session.userId === userId) {
+        sessionsToClose.push(sessionId);
       }
     }
+
+    if (sessionsToClose.length > 0) {
+      logger.info('Closing user sessions due to auth failure', { 
+        userId, 
+        count: sessionsToClose.length,
+        reason 
+      });
+
+      for (const sessionId of sessionsToClose) {
+        await this.closeTransport(sessionId, reason);
+      }
+    }
+  }
+
+  // Find session by MCP session header
+  findSessionByHeader(mcpSessionId: string | undefined): TransportSession | undefined {
+    if (!mcpSessionId) return undefined;
+    return this.transports[mcpSessionId];
   }
 }

@@ -78,10 +78,11 @@ async function initializeServices() {
   // Initialize Outline API client
   const outlineApiClient = createOutlineApiClient(tokenStorage, outlineOAuthService);
 
-  // Initialize authentication middleware with Outline OAuth as primary
-  const authMiddleware = new AuthMiddleware(tokenStorage, outlineApiClient, outlineOAuthService);
-
+  // Initialize MCP Manager first
   const mcpManager = new McpServerManager(outlineApiClient);
+
+  // Initialize authentication middleware with Outline OAuth as primary and MCP manager
+  const authMiddleware = new AuthMiddleware(tokenStorage, outlineApiClient, outlineOAuthService, mcpManager);
 
   return {
     tokenStorage,
@@ -374,7 +375,33 @@ async function startServer() {
   app.get('/health', (req, res) => {
     res.json({ 
       status: 'ok', 
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      activeConnections: mcpManager.getActiveConnections()
+    });
+  });
+
+  // Session monitoring endpoint (SSE for real-time updates)
+  app.get('/v1/mcp/sessions/monitor', authMiddleware.ensureAuthenticated.bind(authMiddleware), async (req, res) => {
+    // Set up SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Disable Nginx buffering
+    
+    // Send initial session info
+    const sessionInfo = mcpManager.getSessionInfo();
+    res.write(`data: ${JSON.stringify({ type: 'session_status', sessions: sessionInfo })}\n\n`);
+    
+    // Set up periodic updates
+    const updateInterval = setInterval(() => {
+      const currentSessions = mcpManager.getSessionInfo();
+      res.write(`data: ${JSON.stringify({ type: 'session_status', sessions: currentSessions })}\n\n`);
+    }, 10000); // Update every 10 seconds
+    
+    // Clean up on client disconnect
+    req.on('close', () => {
+      clearInterval(updateInterval);
+      logger.debug('Session monitor client disconnected');
     });
   });
 
@@ -412,6 +439,7 @@ async function startServer() {
         email: user.email
       },
       activeConnections: mcpManager.getActiveConnections(),
+      sessions: mcpManager.getSessionInfo(),
       outline: outlineStatus
     });
   });
