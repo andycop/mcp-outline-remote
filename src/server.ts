@@ -67,16 +67,38 @@ async function startServer() {
   const { authMiddleware, mcpManager } = services;
 
   // Express middleware
-  app.use(helmet());
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"], // Allow inline styles for our simple page
+        scriptSrc: ["'self'"],
+        imgSrc: ["'self'", "data:", "https:"],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        mediaSrc: ["'self'"],
+        frameSrc: ["'none'"],
+        frameAncestors: ["'none'"], // Prevent clickjacking
+        upgradeInsecureRequests: null, // Cloudflare handles HTTPS upgrades
+      }
+    },
+    hsts: false, // Cloudflare handles HSTS
+    hidePoweredBy: true, // Hide X-Powered-By header
+    noSniff: true, // X-Content-Type-Options: nosniff
+    xssFilter: true, // X-XSS-Protection
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
+  }));
   app.use(cors());
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.json({ limit: '10mb' })); // Add request size limit
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(session({
     secret: process.env.SESSION_SECRET!,
     resave: false,
     saveUninitialized: false,
     proxy: true, // Trust proxy for secure cookies
     cookie: { 
+      httpOnly: true, // Prevent XSS attacks
       sameSite: 'lax',
       secure: false, // Allow HTTP for Docker internal, proxy handles HTTPS 
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
@@ -86,8 +108,8 @@ async function startServer() {
   // OAuth endpoints for MCP authentication
   app.use('/', oauthRoutes);
 
-  // API status route
-  app.get('/auth/status', (req, res) => {
+  // API status route - protected
+  app.get('/auth/status', authMiddleware.ensureAuthenticated.bind(authMiddleware), (req, res) => {
       const hasToken = !!process.env.OUTLINE_API_TOKEN;
       res.json({
         status: hasToken ? 'configured' : 'not_configured',
@@ -102,12 +124,11 @@ async function startServer() {
     });
   });
 
-  // Health endpoint (no auth required)
+  // Health endpoint (no auth required) - minimal info for Cloudflare tunnel
   app.get('/health', (req, res) => {
     res.json({ 
       status: 'ok', 
-      timestamp: new Date().toISOString(),
-      activeConnections: mcpManager.getActiveConnections()
+      timestamp: new Date().toISOString()
     });
   });
 
@@ -169,12 +190,8 @@ async function startServer() {
   app.get('/', async (req, res) => {
     const template = readFileSync(join(__dirname, 'views', 'index.html'), 'utf-8');
     
-    const hasToken = !!process.env.OUTLINE_API_TOKEN;
-    const statusSection = `<div class="status ${hasToken ? 'authenticated' : 'unauthenticated'}">
-       <strong>${hasToken ? '✓ API Token Configured' : '✗ Not Configured'}</strong><br>
-       ${hasToken ? 'Using Outline API token for all requests.' : 'No Outline API token configured.'}<br>
-       <a href="/auth/status" class="button info">Status</a>
-     </div>`;
+    // Minimal status section - no configuration details exposed
+    const statusSection = '';
     
     const html = template.replace('{{STATUS_SECTION}}', statusSection);
     res.send(html);
