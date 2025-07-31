@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import { logger } from './logger.js';
+import logger from '../lib/logger.js';
 
 let _outlineClient: AxiosInstance | null = null;
 
