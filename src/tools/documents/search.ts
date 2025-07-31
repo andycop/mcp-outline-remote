@@ -1,6 +1,5 @@
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { OutlineNotAuthorizedException } from '../../auth/outline-oauth.js';
 import { UserContext } from '../../types/context.js';
 
 export const searchDocumentsSchema = {
@@ -51,10 +50,10 @@ export async function searchDocumentsHandler(
     if (dateFilter) requestData.dateFilter = dateFilter;
 
 
-    const response = await context.outlineClient.makeRequest(context.userId, '/documents.search', {
+    const response = await context.outlineClient.makeRequest('/documents.search', {
       method: 'POST',
       data: requestData
-    });
+    }, { userId: context.userId, email: context.email });
     
     return {
       content: [
@@ -65,7 +64,7 @@ export async function searchDocumentsHandler(
       ],
     };
   } catch (error: any) {
-    if (error instanceof OutlineNotAuthorizedException) {
+    if (error.message?.includes("authorization failed")) {
       return {
         content: [
           {

@@ -1,6 +1,5 @@
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { OutlineNotAuthorizedException } from '../../auth/outline-oauth.js';
 import { UserContext } from '../../types/context.js';
 import { toolsLogger as logger } from '../../lib/logger.js';
 
@@ -18,15 +17,15 @@ export async function listCollectionsHandler(
 ) {
   const { offset = 0, limit = 10 } = args;
   try {
-    const response = await context.outlineClient.makeRequest(context.userId, '/collections.list', {
+    const response = await context.outlineClient.makeRequest('/collections.list', {
       method: 'POST',
       data: {
         offset,
         limit,
       }
-    });
+    }, { userId: context.userId, email: context.email });
     
-    logger.debug('Outline API response', { response: JSON.stringify(response.data).substring(0, 200) });
+    logger.debug('Outline API response', { response: JSON.stringify(response.data).substring(0, 200) }, { userId: context.userId, email: context.email });
     
     // Check if response has data
     if (!response.data || !response.data.data) {
@@ -42,7 +41,7 @@ export async function listCollectionsHandler(
       ],
     };
   } catch (error: any) {
-    if (error instanceof OutlineNotAuthorizedException) {
+    if (error.message?.includes("authorization failed")) {
       return {
         content: [
           {

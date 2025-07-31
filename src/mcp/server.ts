@@ -83,18 +83,11 @@ export class McpServerManager {
 
     for (const [sessionId, session] of activeSessions) {
       try {
-        // Check if the user is still authorized
-        if (session.userId && session.userId !== 'unknown' && session.userId !== 'legacy-token-user') {
-          const isAuthorized = await this.outlineClient.isUserAuthenticated(session.userId);
-          
-          if (!isAuthorized) {
-            logger.warn('Session health check failed - user not authorized', { 
-              sessionId, 
-              userId: session.userId 
-            });
-            await this.closeTransport(sessionId, 'Health check failed - authorization lost');
-          }
-        }
+        // Health check - just verify session is still active
+        logger.debug('Health check for session', { 
+          sessionId, 
+          userId: session.userId 
+        });
       } catch (error) {
         logger.error('Error during session health check', { 
           sessionId,
@@ -161,8 +154,13 @@ export class McpServerManager {
     const sessionUserId = (req.session as any)?.outlineUserId;
     
     // User ID should now be the real Outline user ID from middleware resolution
-    const userId = user?.oid || sessionUserId || 'legacy-token-user';
-    const userContext: UserContext = { userId, outlineClient: this.outlineClient };
+    const userId = user?.oid || sessionUserId || process.env.AI_BOT_USER_ID || 'api-user';
+    const userContext: UserContext = { 
+      userId, 
+      email: user?.email,
+      name: user?.name,
+      outlineClient: this.outlineClient 
+    };
     
     logger.debug('MCP server created with user context', {
       realUserId: userId,

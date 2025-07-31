@@ -1,18 +1,33 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # MCP Outline Remote Server v3
 
 ## Project Overview
-This is version 3 of the remote MCP (Model Context Protocol) server that provides tools for interacting with Outline (document management platform). Version 3 features streamlined Outline OAuth authentication as the primary authentication method, eliminating dual OAuth complexity and providing seamless Claude.ai integration.
+This is version 3 of the remote MCP (Model Context Protocol) server that provides tools for interacting with Outline (document management platform). Version 3 features simplified authentication using a single Outline API token for all requests, with MCP OAuth for user authentication (to be implemented).
 
-## v3 Status - Production Ready ✅
+## Development Commands
 
-**Completed**: Streamlined Outline OAuth architecture with simplified authentication, all 12 tools, production security, modular structure, optional Redis, Claude.ai integration.
+### Build and Run
+```bash
+npm install           # Install dependencies
+npm run dev          # Development with hot reload (tsx watch)
+npm run dev:debug    # Development with debug logging
+npm run dev:trace    # Development with trace-level logging
+npm run build        # Build TypeScript and copy views
+npm start            # Production mode
+npm start:debug      # Production with debug logging
+```
 
-### Key Achievements
-- **🔐 Single OAuth Step** - Direct Outline OAuth, eliminated dual authentication complexity
-- **⚡ Claude.ai Bridge** - Seamless MCP client authentication via OAuth endpoints
-- **🛡️ Production Security** - Logging anonymization, security headers, environment validation
-- **🏗️ Clean Architecture** - Modular design with separated concerns
-- **📊 Monitoring Ready** - Health checks, structured logging, graceful shutdown
+### Code Quality
+Currently no linting or formatting tools are configured. Consider adding:
+- ESLint with TypeScript configuration
+- Prettier for consistent formatting
+- Pre-commit hooks for quality checks
+
+### Testing
+No test framework is currently configured. The test script exits with error code 1.
 
 ## Architecture
 
@@ -21,108 +36,154 @@ This is version 3 of the remote MCP (Model Context Protocol) server that provide
 src/
 ├── server.ts          # Main Express app with OAuth integration
 ├── auth/
-│   ├── oauth.ts       # OAuth 2.0 authorization server
-│   └── middleware.ts  # Authentication middleware  
+│   ├── oauth.ts       # OAuth 2.0 authorization server with PKCE
+│   ├── middleware.ts  # Authentication middleware  
+│   └── routes.ts      # OAuth endpoints (/auth/authorize, /auth/callback, /auth/token)
 ├── mcp/
-│   └── server.ts      # MCP server factory and management
+│   └── server.ts      # MCP server factory with SSE transport
 ├── tools/
 │   ├── documents/     # 7 document management tools
-│   │   ├── create.ts, delete.ts, get.ts, list.ts
-│   │   ├── move.ts, search.ts, update.ts
+│   │   ├── create.ts  # Create new documents
+│   │   ├── delete.ts  # Delete documents
+│   │   ├── get.ts     # Get document content
+│   │   ├── list.ts    # List documents with filters
+│   │   ├── move.ts    # Move documents between collections
+│   │   ├── search.ts  # Search documents
+│   │   └── update.ts  # Update document content
 │   └── collections/   # 5 collection management tools
-│       ├── create.ts, delete.ts, get.ts, list.ts, update.ts
+│       ├── create.ts  # Create new collections
+│       ├── delete.ts  # Delete collections
+│       ├── get.ts     # Get collection details
+│       ├── list.ts    # List collections
+│       └── update.ts  # Update collection properties
 ├── storage/
-│   └── tokens.ts      # Token storage (Redis optional)
+│   └── tokens.ts      # Token storage abstraction (Redis optional)
 ├── utils/
-│   ├── logger.ts      # Secure logging with anonymization
+│   ├── logger.ts      # Pino logger with security serializers
 │   └── outline.ts     # Outline API client (lazy-loaded)
 └── views/
-    └── index.html     # HTML template for web interface
+    └── index.html     # OAuth consent page template
 ```
 
-## Available Tools
+### Key Architectural Patterns
 
-**Document Tools (7)**: list, create, get, update, delete, search, move  
-**Collection Tools (5)**: list, create, get, update, delete
-
-All tools support per-user authentication and comprehensive error handling.
+1. **OAuth 2.0 with PKCE**: Secure authorization flow with code challenge
+2. **Session-based Authentication**: Maps temporary session IDs to real Outline user IDs
+3. **Modular Tool System**: Each tool in separate file with Zod schema validation
+4. **Storage Abstraction**: Interface-based design supporting Redis or in-memory
+5. **Component Logging**: Pino child loggers for each component
+6. **Graceful Shutdown**: Proper cleanup on SIGINT/SIGTERM
+7. **Health Checks**: MCP server sessions checked every 2 minutes
 
 ## Environment Configuration
 
-**Required**: `SESSION_SECRET`, `OUTLINE_API_URL`, `OUTLINE_OAUTH_CLIENT_ID`, `OUTLINE_OAUTH_CLIENT_SECRET`, `OUTLINE_OAUTH_REDIRECT_URI`
-
-**Optional**: `PUBLIC_URL` (production domain), `REDIS_URL` (enables Redis), `PORT` (default: 3131), `NODE_ENV`
-
-## Technical Features
-
-### OAuth Integration
-- **Single authentication step**: Direct Outline OAuth (no dual authentication)
-- **Claude.ai bridge**: OAuth endpoints handle MCP client integration
-- **Auto token refresh**: Access tokens ~1-2 hours, refresh tokens weeks-months
-- **PKCE security**: Enhanced OAuth with code challenge verification
-
-### Authentication Flow
-1. Claude.ai integration → OAuth bridge initiates Outline authorization
-2. User authorizes once on Outline OAuth page
-3. System handles all token management automatically
-4. Re-authorization only if refresh tokens expire
-
-### Network Configuration
-- Binds to `0.0.0.0:3131` for Cloudflare tunnel compatibility
-- Configure `PUBLIC_URL` environment variable for production deployments
-
-## Development Commands
+### Required Variables
 ```bash
-npm run dev      # Development with hot reload
-npm run build    # Build TypeScript
-npm start        # Production mode
+SESSION_SECRET     # Express session secret
+OUTLINE_API_URL    # Outline instance URL (e.g., https://app.getoutline.com)
+OUTLINE_API_TOKEN  # Outline API token for server access
 ```
 
-## Migration Notes
-- **v1 → v3**: Simple SSE → Streamlined Outline OAuth, enhanced security, modular architecture
-- **v2 → v3**: Dual OAuth → Single Outline OAuth with Claude.ai bridge  
-- **Breaking changes**: Authentication overhaul, simplified configuration
-- **Benefits**: Faster onboarding, reduced complexity, better UX
+### Optional Variables
+```bash
+PUBLIC_URL      # Production domain (for OAuth redirects)
+REDIS_URL       # Redis connection string (enables persistence)
+PORT            # Server port (default: 3131)
+NODE_ENV        # Environment (development/production)
+LOG_LEVEL       # Logging level: trace, debug, info, warn, error, fatal (default: info)
+```
+
+### API Token Configuration
+```bash
+OUTLINE_API_TOKEN  # Required: Outline API token for server access
+AI_BOT_USER_ID     # Optional: User ID for audit logs (default: api-user)
+AI_BOT_NAME        # Optional: Display name for logs (default: API User)
+AI_BOT_EMAIL       # Optional: Email for logs (default: api@outline.local)
+```
+
+## Authentication Flow
+
+1. **MCP Authentication**: Users authenticate to MCP server via OAuth (TODO: implement provider)
+2. **Outline Access**: Server uses single API token for all Outline API calls
+3. **User Context**: Authenticated user info passed to tools for audit/logging
+
+## Available Tools
+
+### Document Tools (7)
+- `list-documents`: Filter by collection, status, dates, sorting
+- `create-document`: Create with title, text, collection, publish status
+- `get-document`: Retrieve by ID or path with optional include params
+- `update-document`: Update title, text, append content, publish status
+- `delete-document`: Permanently remove or archive documents
+- `search-documents`: Full-text search with filters
+- `move-document`: Move between collections
+
+### Collection Tools (5)
+- `list-collections`: List all accessible collections
+- `create-collection`: Create with name, description, color, icon
+- `get-collection`: Retrieve collection details
+- `update-collection`: Update name, description, color, icon, permissions
+- `delete-collection`: Remove collections
+
+## Important API Notes
+
+**⚠️ CRITICAL: All Outline API endpoints use POST requests** (except OAuth endpoints which use GET/POST as per OAuth 2.0 spec)
+
+### Common Parameters
+- **Statuses**: `active`, `archived`, `published`, `draft`, `template`
+- **Date Filters**: `updatedAt`, `archivedAt`, `publishedAt`, `createdAt`
+- **Sort Options**: `updatedAt`, `index`, `title`, `createdAt`
+- **Directions**: `ASC`, `DESC`
+- **Colors**: 12 predefined colors for collections
+- **Icons**: 50+ available collection icons
+- **Permissions**: `read`, `read_write`, `manage`
+
+## Security Features
+
+- **Helmet.js**: Security headers (CSP, HSTS, etc.)
+- **CORS**: Restricted to same origin
+- **Session Security**: httpOnly, secure cookies in production
+- **Token Expiration**: Automatic cleanup of expired tokens
+- **Logging Anonymization**: Sensitive data redaction
 
 ## Production Deployment
+
 1. Set `NODE_ENV=production`
-2. Configure `REDIS_URL` for persistence  
-3. Use HTTPS for redirect URIs
-4. Monitor logs for security events
+2. Configure `REDIS_URL` for token persistence
+3. Use HTTPS (set `PUBLIC_URL` with https://)
+4. Run behind reverse proxy (app trusts proxy headers)
+5. Monitor `/health` endpoint
+6. Review logs at configured `LOG_LEVEL`
 
-## Important Notes
+### Docker Deployment
+```bash
+docker compose up -d  # Uses docker-compose.yml
+```
 
-**⚠️ CRITICAL: All Outline API endpoints use POST requests** (except OAuth endpoints)
+## Development Tips
 
-## Next Priorities
+1. **Hot Reload**: Use `npm run dev` for automatic restarts
+2. **Debugging**: Set `LOG_LEVEL=debug` or use `npm run dev:debug`
+3. **Network Issues**: Server binds to `0.0.0.0:3131` for tunnel compatibility
+4. **Session Timeouts**: 30min inactive, 5min cleanup interval
+5. **Token Refresh**: Handled automatically, logs at debug level
 
-### Tool Optimizations
-- LLM-optimized responses for better Claude.ai integration
-- Enhanced error messages and result summarization
-- Performance optimizations
+## Common Issues
 
-### Future Improvements  
-- Enhanced error handling and rate limiting
-- Monitoring metrics and testing framework
+1. **Authentication Errors**: Check OAuth credentials and redirect URI
+2. **Network Timeouts**: Verify Outline API URL accessibility
+3. **Session Loss**: Ensure `SESSION_SECRET` is set and stable
+4. **Redis Connection**: Falls back to in-memory if Redis unavailable
 
-## Recent Session Summaries
+## Migration Notes
 
-### 🎉 Architectural Success (2025-06-30)
-**Major Achievement**: Simplified architecture eliminating dual OAuth complexity
+- **v1 → v3**: Simple SSE → Modular architecture with API token auth
+- **v2 → v3**: Complex dual OAuth → Simple API token for Outline access
+- **Breaking Changes**: Removed Outline OAuth, now uses API token only
 
-✅ **Authentication Flow Success**:
-1. Session Created: temporary ID → Real Outline user ID mapping
-2. OAuth Completed: Real user ID (dd22f354-d625-412a-a374-1b95c4353557) obtained  
-3. Claude.ai Tokens: Use real user ID directly
-4. API Usage: All tools work without authentication errors
+## Recent Achievements
 
-✅ **Architecture Benefits**:
-- Single token refresh logic (only Outline tokens need management)
-- Real user IDs throughout (no fake ID confusion)
-- Clean session mapping (temp session ID bridges to permanent real ID)
-- Eliminated timing issues (no dual token expiration conflicts)
-
-### Previous Accomplishments (2025-06-29)
-- OAuth 2.0 refresh token implementation with session persistence
-- Production Docker setup with Redis and health checks  
-- Fixed Claude.ai timeout issues with automatic token refresh
+- Simplified architecture eliminating dual OAuth complexity
+- Real user IDs throughout system (no fake ID confusion)
+- Clean session mapping for seamless Claude.ai integration
+- Production-ready with comprehensive error handling

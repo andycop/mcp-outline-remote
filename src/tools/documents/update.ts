@@ -1,6 +1,5 @@
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { OutlineNotAuthorizedException } from '../../auth/outline-oauth.js';
 import { UserContext } from '../../types/context.js';
 
 export const updateDocumentSchema = {
@@ -34,10 +33,10 @@ export async function updateDocumentHandler(
     if (publish !== undefined) requestData.publish = publish;
     if (done !== undefined) requestData.done = done;
 
-    const response = await context.outlineClient.makeRequest(context.userId, '/documents.update', {
+    const response = await context.outlineClient.makeRequest('/documents.update', {
       method: 'POST',
       data: requestData
-    });
+    }, { userId: context.userId, email: context.email });
     
     return {
       content: [
@@ -48,7 +47,7 @@ export async function updateDocumentHandler(
       ],
     };
   } catch (error: any) {
-    if (error instanceof OutlineNotAuthorizedException) {
+    if (error.message?.includes("authorization failed")) {
       return {
         content: [
           {

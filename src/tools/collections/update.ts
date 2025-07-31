@@ -1,6 +1,5 @@
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { OutlineNotAuthorizedException } from '../../auth/outline-oauth.js';
 import { UserContext } from '../../types/context.js';
 
 export const updateCollectionSchema = {
@@ -37,10 +36,10 @@ export async function updateCollectionHandler(
     if (color) requestData.color = color;
     if (sharing !== undefined) requestData.sharing = sharing;
 
-    const response = await context.outlineClient.makeRequest(context.userId, '/collections.update', {
+    const response = await context.outlineClient.makeRequest('/collections.update', {
       method: 'POST',
       data: requestData
-    });
+    }, { userId: context.userId, email: context.email });
     
     return {
       content: [
@@ -51,7 +50,7 @@ export async function updateCollectionHandler(
       ],
     };
   } catch (error: any) {
-    if (error instanceof OutlineNotAuthorizedException) {
+    if (error.message?.includes("authorization failed")) {
       return {
         content: [
           {

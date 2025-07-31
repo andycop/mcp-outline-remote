@@ -1,6 +1,5 @@
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { OutlineNotAuthorizedException } from '../../auth/outline-oauth.js';
 import { UserContext } from '../../types/context.js';
 
 export const createDocumentSchema = {
@@ -36,10 +35,10 @@ export async function createDocumentHandler(
     if (template !== undefined) requestData.template = template;
     if (publish !== undefined) requestData.publish = publish;
 
-    const response = await context.outlineClient.makeRequest(context.userId, '/documents.create', {
+    const response = await context.outlineClient.makeRequest('/documents.create', {
       method: 'POST',
       data: requestData
-    });
+    }, { userId: context.userId, email: context.email });
     
     return {
       content: [
@@ -50,7 +49,7 @@ export async function createDocumentHandler(
       ],
     };
   } catch (error: any) {
-    if (error instanceof OutlineNotAuthorizedException) {
+    if (error.message?.includes("authorization failed")) {
       return {
         content: [
           {

@@ -37,29 +37,27 @@ npm run build
 npm start
 ```
 
-## Outline OAuth Setup
+## Outline API Setup
 
-1. **In Outline Settings → API**, create application:
-   - **Name**: `MCP Server OAuth`
-   - **Redirect URI**: `https://your-domain.com/auth/outline/callback`
-   - **Scopes**: Select all available
+1. **In Outline Settings → API**, create an API token:
+   - Click "Create token"
+   - Give it a descriptive name (e.g., `MCP Server`)
+   - Copy the token (starts with `ol_api_`)
 
 2. **Configure environment**:
    ```env
    SESSION_SECRET=your-random-session-secret
    OUTLINE_API_URL=https://your-outline-instance.com/api
-   OUTLINE_OAUTH_CLIENT_ID=your-client-id
-   OUTLINE_OAUTH_CLIENT_SECRET=your-client-secret
-   OUTLINE_OAUTH_REDIRECT_URI=https://your-domain.com/auth/outline/callback
-   REDIS_URL=redis://localhost:6379  # optional
+   OUTLINE_API_TOKEN=your-api-token
+   REDIS_URL=redis://localhost:6379  # optional for token persistence
    ```
 
 ## Usage
 
 ### Claude.ai Integration
-1. Add MCP server in Claude.ai (seamless OAuth bridge)
-2. First tool use triggers one-time Outline authorization
-3. All subsequent usage works automatically
+1. Add MCP server in Claude.ai
+2. The server uses the configured API token for all Outline access
+3. User authentication for MCP can be added via OAuth providers (TODO)
 
 ### Available Tools
 **Document Tools**: search, get, create, update, delete, list, move  

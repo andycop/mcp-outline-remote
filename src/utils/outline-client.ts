@@ -1,6 +1,4 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
-import { TokenStorage } from '../storage/tokens.js';
-import { OutlineOAuthService, OutlineNotAuthorizedException } from '../auth/outline-oauth.js';
 import { apiLogger as logger } from '../lib/logger.js';
 
 export interface OutlineApiRequestOptions extends AxiosRequestConfig {
@@ -11,21 +9,15 @@ export interface OutlineApiRequestOptions extends AxiosRequestConfig {
 
 export class OutlineApiClient {
   private baseURL: string;
-  private legacyToken?: string;
-  private tokenStorage: TokenStorage;
-  private oauthService?: OutlineOAuthService;
+  private apiToken: string;
   private httpClient: AxiosInstance;
 
   constructor(
     baseURL: string, 
-    tokenStorage: TokenStorage,
-    legacyToken?: string,
-    oauthService?: OutlineOAuthService
+    apiToken: string
   ) {
     this.baseURL = baseURL;
-    this.legacyToken = legacyToken;
-    this.tokenStorage = tokenStorage;
-    this.oauthService = oauthService;
+    this.apiToken = apiToken;
 
     this.httpClient = axios.create({
       baseURL,
@@ -33,7 +25,8 @@ export class OutlineApiClient {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'User-Agent': 'MCP-Outline-Remote/2.0.0'
+        'User-Agent': 'MCP-Outline-Remote/3.0.0',
+        'Authorization': `Bearer ${apiToken}`
       }
     });
 
@@ -41,99 +34,63 @@ export class OutlineApiClient {
   }
 
   /**
-   * Make authenticated request using user's OAuth token
+   * Make authenticated request using API token
    */
   async makeRequest(
-    userId: string, 
     endpoint: string, 
-    options: OutlineApiRequestOptions = {}
+    options: OutlineApiRequestOptions = {},
+    userContext?: { userId?: string; email?: string }
   ): Promise<any> {
     const startTime = Date.now();
     
     try {
-      // Try to get user's OAuth token first
-      let accessToken: string | null = null;
-      
-      if (this.oauthService) {
-        try {
-          accessToken = await this.oauthService.getValidAccessToken(userId);
-          logger.debug('Using OAuth token for request', { userId, endpoint });
-        } catch (error) {
-          if (error instanceof OutlineNotAuthorizedException) {
-            logger.info('User not authorized for Outline, using fallback', { userId });
-            throw error; // Propagate this specific error
-          }
-          logger.warn('Failed to get OAuth token, trying fallback', { 
-            userId, 
-            error: error instanceof Error ? error.message : String(error) 
-          });
-        }
-      }
-
-      // Fallback to legacy token if OAuth not available
-      if (!accessToken && this.legacyToken) {
-        accessToken = this.legacyToken;
-        logger.debug('Using legacy API token for request', { userId, endpoint });
-      }
-
-      if (!accessToken) {
-        throw new OutlineNotAuthorizedException(
-          'No authentication method available. Please connect your Outline account or configure OUTLINE_API_TOKEN.'
-        );
-      }
-
       const config: AxiosRequestConfig = {
         ...options,
         url: endpoint,
         headers: {
-          ...options.headers,
-          'Authorization': `Bearer ${accessToken}`
+          ...options.headers
         }
       };
 
-      // Log request details
+      // Log request details with user context if available
       logger.info('Making Outline API request', {
-        userId,
         endpoint,
         method: options.method || 'GET',
         hasData: !!options.data,
-        timeout: config.timeout || 30000
+        timeout: config.timeout || 30000,
+        ...(userContext && { userContext })
       });
 
       const response = await this.httpClient.request(config);
       const duration = Date.now() - startTime;
       
       logger.info('Outline API request successful', {
-        userId,
         endpoint,
         method: options.method || 'GET',
         status: response.status,
         duration: `${duration}ms`,
-        responseSize: JSON.stringify(response.data).length
+        responseSize: JSON.stringify(response.data).length,
+        ...(userContext && { userContext })
       });
 
       return response;
     } catch (error: any) {
-      if (error instanceof OutlineNotAuthorizedException) {
-        throw error; // Re-throw authorization errors
-      }
-
       const duration = Date.now() - startTime;
       logger.error('Outline API request failed', {
-        userId,
         endpoint,
         method: options.method || 'GET',
         status: error.response?.status,
         message: error.message,
         duration: `${duration}ms`,
         code: error.code,
-        isTimeout: error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT'
+        isTimeout: error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT',
+        ...(userContext && { userContext })
       });
 
       // Check if it's an authorization error
       if (error.response?.status === 401) {
-        throw new OutlineNotAuthorizedException(
-          'Authorization failed. Please reconnect your Outline account.'
+        throw new Error(
+          'Outline API authorization failed. Please check your OUTLINE_API_TOKEN configuration.'
         );
       }
 
@@ -142,34 +99,30 @@ export class OutlineApiClient {
   }
 
   /**
-   * Legacy method for backward compatibility
+   * Convenience method for GET requests
    */
-  async get(endpoint: string, params?: any): Promise<any> {
-    const userId = 'legacy'; // Special userId for legacy requests
-    return this.makeRequest(userId, endpoint, { method: 'GET', params });
+  async get(endpoint: string, params?: any, userContext?: { userId?: string; email?: string }): Promise<any> {
+    return this.makeRequest(endpoint, { method: 'GET', params }, userContext);
   }
 
-  async post(endpoint: string, data?: any): Promise<any> {
-    const userId = 'legacy';
-    return this.makeRequest(userId, endpoint, { method: 'POST', data });
+  async post(endpoint: string, data?: any, userContext?: { userId?: string; email?: string }): Promise<any> {
+    return this.makeRequest(endpoint, { method: 'POST', data }, userContext);
   }
 
-  async put(endpoint: string, data?: any): Promise<any> {
-    const userId = 'legacy';
-    return this.makeRequest(userId, endpoint, { method: 'PUT', data });
+  async put(endpoint: string, data?: any, userContext?: { userId?: string; email?: string }): Promise<any> {
+    return this.makeRequest(endpoint, { method: 'PUT', data }, userContext);
   }
 
-  async delete(endpoint: string): Promise<any> {
-    const userId = 'legacy';
-    return this.makeRequest(userId, endpoint, { method: 'DELETE' });
+  async delete(endpoint: string, userContext?: { userId?: string; email?: string }): Promise<any> {
+    return this.makeRequest(endpoint, { method: 'DELETE' }, userContext);
   }
 
   /**
-   * Get user information from Outline
+   * Get user information from Outline for the API token user
    */
-  async getUserInfo(userId: string): Promise<{ id: string; name: string; email: string } | null> {
+  async getApiUserInfo(): Promise<{ id: string; name: string; email: string } | null> {
     try {
-      const response = await this.makeRequest(userId, '/auth.info', { method: 'POST' });
+      const response = await this.makeRequest('/auth.info', { method: 'POST' });
       const user = response.data?.data?.user;
       
       if (user) {
@@ -181,19 +134,9 @@ export class OutlineApiClient {
       }
       return null;
     } catch (error) {
-      logger.warn('Failed to fetch user info from Outline', { userId, error: error instanceof Error ? error.message : String(error) });
+      logger.warn('Failed to fetch API user info from Outline', { error: error instanceof Error ? error.message : String(error) });
       return null;
     }
-  }
-
-  /**
-   * Check if user has valid Outline authentication
-   */
-  async isUserAuthenticated(userId: string): Promise<boolean> {
-    if (this.oauthService) {
-      return await this.oauthService.isUserAuthorized(userId);
-    }
-    return !!this.legacyToken; // Legacy token means anyone can use it
   }
 
   private setupInterceptors(): void {
@@ -234,10 +177,7 @@ export class OutlineApiClient {
 }
 
 // Factory function to create the outline client
-export function createOutlineApiClient(
-  tokenStorage: TokenStorage,
-  oauthService?: OutlineOAuthService
-): OutlineApiClient {
+export function createOutlineApiClient(): OutlineApiClient {
   const API_URL = process.env.OUTLINE_API_URL;
   const API_TOKEN = process.env.OUTLINE_API_TOKEN;
 
@@ -245,11 +185,14 @@ export function createOutlineApiClient(
     throw new Error('OUTLINE_API_URL environment variable is required');
   }
 
+  if (!API_TOKEN) {
+    throw new Error('OUTLINE_API_TOKEN environment variable is required');
+  }
+
   logger.info('Creating Outline API client', {
     baseURL: API_URL,
-    hasLegacyToken: !!API_TOKEN,
-    hasOAuthService: !!oauthService
+    hasApiToken: true
   });
 
-  return new OutlineApiClient(API_URL, tokenStorage, API_TOKEN, oauthService);
+  return new OutlineApiClient(API_URL, API_TOKEN);
 }

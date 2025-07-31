@@ -13,6 +13,8 @@ interface AccessTokenData {
   token: string;
   clientId: string;
   userId: string;
+  email?: string;
+  name?: string;
   scope: string;
   expiresAt: number;
 }
@@ -25,14 +27,6 @@ interface RefreshTokenData {
   expiresAt: number;
 }
 
-export interface OutlineTokenData {
-  accessToken: string;
-  refreshToken: string;
-  expiresAt: number;
-  scopes: string[];
-  authorizedAt: number;
-}
-
 export interface TokenStorage {
   setAuthCode(code: string, data: AuthCodeData): Promise<void>;
   getAuthCode(code: string): Promise<AuthCodeData | null>;
@@ -43,25 +37,12 @@ export interface TokenStorage {
   setRefreshToken(token: string, data: RefreshTokenData): Promise<void>;
   getRefreshToken(token: string): Promise<RefreshTokenData | null>;
   deleteRefreshToken(token: string): Promise<void>;
-  
-  // Outline OAuth token management
-  setOutlineTokens(userId: string, data: OutlineTokenData): Promise<void>;
-  getOutlineTokens(userId: string): Promise<OutlineTokenData | null>;
-  deleteOutlineTokens(userId: string): Promise<void>;
-  isUserAuthorizedForOutline(userId: string): Promise<boolean>;
-  
-  // Session to user ID mapping for simplified architecture
-  setSessionUserMapping(sessionUserId: string, realUserId: string): Promise<void>;
-  getSessionUserMapping(sessionUserId: string): Promise<string | null>;
-  deleteSessionUserMapping(sessionUserId: string): Promise<void>;
 }
 
 class InMemoryTokenStorage implements TokenStorage {
   private authCodes = new Map<string, AuthCodeData>();
   private accessTokens = new Map<string, AccessTokenData>();
   private refreshTokens = new Map<string, RefreshTokenData>();
-  private outlineTokens = new Map<string, OutlineTokenData>();
-  private sessionUserMappings = new Map<string, string>();
 
   async setAuthCode(code: string, data: AuthCodeData): Promise<void> {
     this.authCodes.set(code, data);
@@ -119,42 +100,6 @@ class InMemoryTokenStorage implements TokenStorage {
   async deleteRefreshToken(token: string): Promise<void> {
     this.refreshTokens.delete(token);
   }
-
-  async setOutlineTokens(userId: string, data: OutlineTokenData): Promise<void> {
-    this.outlineTokens.set(userId, data);
-  }
-
-  async getOutlineTokens(userId: string): Promise<OutlineTokenData | null> {
-    const data = this.outlineTokens.get(userId);
-    if (!data || data.expiresAt < Date.now()) {
-      if (data) {
-        this.outlineTokens.delete(userId);
-      }
-      return null;
-    }
-    return data;
-  }
-
-  async deleteOutlineTokens(userId: string): Promise<void> {
-    this.outlineTokens.delete(userId);
-  }
-
-  async isUserAuthorizedForOutline(userId: string): Promise<boolean> {
-    const tokens = await this.getOutlineTokens(userId);
-    return tokens !== null;
-  }
-
-  async setSessionUserMapping(sessionUserId: string, realUserId: string): Promise<void> {
-    this.sessionUserMappings.set(sessionUserId, realUserId);
-  }
-
-  async getSessionUserMapping(sessionUserId: string): Promise<string | null> {
-    return this.sessionUserMappings.get(sessionUserId) || null;
-  }
-
-  async deleteSessionUserMapping(sessionUserId: string): Promise<void> {
-    this.sessionUserMappings.delete(sessionUserId);
-  }
 }
 
 class RedisTokenStorage implements TokenStorage {
@@ -204,39 +149,6 @@ class RedisTokenStorage implements TokenStorage {
 
   async deleteRefreshToken(token: string): Promise<void> {
     await this.redis.del(`refresh_token:${token}`);
-  }
-
-  async setOutlineTokens(userId: string, data: OutlineTokenData): Promise<void> {
-    const ttl = Math.max(1, Math.floor((data.expiresAt - Date.now()) / 1000));
-    await this.redis.setex(`outline_tokens:${userId}`, ttl, JSON.stringify(data));
-  }
-
-  async getOutlineTokens(userId: string): Promise<OutlineTokenData | null> {
-    const data = await this.redis.get(`outline_tokens:${userId}`);
-    return data ? JSON.parse(data) : null;
-  }
-
-  async deleteOutlineTokens(userId: string): Promise<void> {
-    await this.redis.del(`outline_tokens:${userId}`);
-  }
-
-  async isUserAuthorizedForOutline(userId: string): Promise<boolean> {
-    const tokens = await this.getOutlineTokens(userId);
-    return tokens !== null;
-  }
-
-  async setSessionUserMapping(sessionUserId: string, realUserId: string): Promise<void> {
-    // Store mapping with 7 day TTL (longer than typical session)
-    await this.redis.setex(`session_mapping:${sessionUserId}`, 7 * 24 * 60 * 60, realUserId);
-  }
-
-  async getSessionUserMapping(sessionUserId: string): Promise<string | null> {
-    const realUserId = await this.redis.get(`session_mapping:${sessionUserId}`);
-    return realUserId || null;
-  }
-
-  async deleteSessionUserMapping(sessionUserId: string): Promise<void> {
-    await this.redis.del(`session_mapping:${sessionUserId}`);
   }
 }
 

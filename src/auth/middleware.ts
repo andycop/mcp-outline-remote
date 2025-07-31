@@ -1,170 +1,79 @@
 import { Request, Response, NextFunction } from 'express';
 import { TokenStorage } from '../storage/tokens.js';
-import { OutlineOAuthService } from './outline-oauth.js';
-import { OutlineApiClient } from '../utils/outline-client.js';
 import { authLogger as logger } from '../lib/logger.js';
-import { McpServerManager } from '../mcp/server.js';
+
+export interface AuthenticatedRequest extends Request {
+  user?: {
+    userId: string;
+    email: string;
+    name?: string;
+  };
+}
 
 export class AuthMiddleware {
   constructor(
-    private storage: TokenStorage,
-    private outlineClient: OutlineApiClient,
-    private outlineOAuthService?: OutlineOAuthService,
-    private mcpServerManager?: McpServerManager
+    private storage: TokenStorage
   ) {}
 
   async ensureAuthenticated(req: Request, res: Response, next: NextFunction): Promise<void> {
-    // For MCP endpoints, check Bearer token authentication (Claude.ai)
-    if (req.path.startsWith('/v1/mcp')) {
+    try {
+      // Check Bearer token authentication
       const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        const accessToken = authHeader.substring(7);
-        const tokenData = await this.storage.getAccessToken(accessToken);
-        
-        if (tokenData) {
-          // Check if Claude.ai token is expired
-          if (tokenData.expiresAt < Date.now()) {
-            logger.warn('Claude.ai access token expired, requiring re-authentication', {
-              userId: tokenData.userId,
-              expiresAt: new Date(tokenData.expiresAt).toISOString()
-            });
-            
-            // Close MCP transport to notify Claude.ai
-            const sessionId = req.headers['mcp-session-id'] as string | undefined;
-            if (sessionId && this.mcpServerManager) {
-              await this.mcpServerManager.closeTransport(sessionId, 'Access token expired');
-            }
-            
-            res.status(401).json({
-              error: 'invalid_token',
-              error_description: 'Access token has expired. Please reconnect your Outline account.'
-            });
-            return;
-          }
-          
-          // Resolve session user ID to real Outline user ID
-          let realUserId = tokenData.userId;
-          if (this.outlineOAuthService) {
-            // Try to get the real user ID from session mapping
-            const mappedUserId = await this.storage.getSessionUserMapping(tokenData.userId);
-            if (mappedUserId) {
-              realUserId = mappedUserId;
-              logger.debug('Resolved session mapping', {
-                sessionUserId: tokenData.userId,
-                realUserId: mappedUserId
-              });
-            }
-          }
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        logger.warn('Missing or invalid authorization header');
+        res.status(401).json({
+          error: 'authentication_required',
+          error_description: 'Bearer token required'
+        });
+        return;
+      }
 
-          // Try to get valid Outline access token (handles refresh automatically)
-          let outlineTokens = null;
-          if (this.outlineOAuthService) {
-            try {
-              // This will automatically refresh expired tokens or throw if user not connected
-              await this.outlineOAuthService.getValidAccessToken(realUserId);
-              // If successful, get the refreshed tokens
-              outlineTokens = await this.storage.getOutlineTokens(realUserId);
-            } catch (error) {
-              logger.warn('Outline authentication failed, requiring connection', {
-                sessionUserId: tokenData.userId,
-                realUserId,
-                error: error instanceof Error ? error.message : String(error)
-              });
-              
-              // Close MCP transport to notify Claude.ai
-              const sessionId = req.headers['mcp-session-id'] as string | undefined;
-              if (sessionId && this.mcpServerManager) {
-                await this.mcpServerManager.closeTransport(sessionId, 'Outline authentication failed');
-              }
-              
-              res.status(401).json({
-                error: 'outline_auth_required',
-                error_description: 'Please connect your Outline account first. Visit /auth/outline/connect to authorize.'
-              });
-              return;
-            }
-          }
-          
-          // Fetch real user info from Outline using the real user ID
-          const userInfo = await this.outlineClient.getUserInfo(realUserId);
-          
-          logger.debug('MCP authentication successful', {
-            sessionUserId: tokenData.userId,
-            realUserId,
-            hasOutlineTokens: !!outlineTokens,
-            realUserName: userInfo?.name
-          });
-          
-          // Set user context for MCP handlers using real user ID
-          (req as any).user = {
-            oid: realUserId, // Use real Outline user ID as primary identifier
-            sessionUserId: tokenData.userId, // Keep session ID for reference
-            name: userInfo?.name || 'Outline User',
-            email: userInfo?.email || 'outline-user@authenticated.com',
-            outlineUserId: realUserId, // Same as oid now
-            outlineTokens
-          };
-          return next();
-        } else {
-          logger.warn('Invalid or expired access token for MCP request', {
-            tokenPrefix: accessToken ? accessToken.substring(0, 20) + '...' : 'none',
-            hasToken: !!accessToken
-          });
-          
-          // Close MCP transport to notify Claude.ai
-          const sessionId = req.headers['mcp-session-id'] as string | undefined;
-          if (sessionId && this.mcpServerManager) {
-            await this.mcpServerManager.closeTransport(sessionId, 'Invalid access token');
-          }
-          
-          res.status(401).json({
-            error: 'invalid_token',
-            error_description: 'Access token is invalid or expired'
-          });
-          return;
-        }
-      }
+      const accessToken = authHeader.substring(7);
+      const tokenData = await this.storage.getAccessToken(accessToken);
       
-      // No Bearer token provided for MCP endpoint
-      res.status(401).json({
-        error: 'authentication_required', 
-        error_description: 'Bearer token required for MCP endpoints'
+      if (!tokenData) {
+        logger.warn('Invalid access token', {
+          tokenPrefix: accessToken.substring(0, 10) + '...'
+        });
+        res.status(401).json({
+          error: 'invalid_token',
+          error_description: 'Invalid access token'
+        });
+        return;
+      }
+
+      // Check if token is expired
+      if (tokenData.expiresAt < Date.now()) {
+        logger.warn('Access token expired', {
+          userId: tokenData.userId,
+          expiresAt: new Date(tokenData.expiresAt).toISOString()
+        });
+        res.status(401).json({
+          error: 'token_expired',
+          error_description: 'Access token has expired'
+        });
+        return;
+      }
+
+      // Set user context from OAuth token data
+      (req as AuthenticatedRequest).user = {
+        userId: tokenData.userId,
+        email: tokenData.email || 'user@authenticated.com',
+        name: tokenData.name
+      };
+
+      logger.debug('User authenticated successfully', {
+        userId: tokenData.userId,
+        email: tokenData.email
       });
-      return;
-    }
-    
-    // For web interface, check session-based authentication
-    const sessionUserId = (req.session as any)?.outlineUserId;
-    if (sessionUserId) {
-      const outlineTokens = await this.storage.getOutlineTokens(sessionUserId);
-      if (outlineTokens) {
-        // Set user context for web interface
-        (req as any).user = {
-          oid: sessionUserId,
-          name: 'Outline User',
-          email: 'outline-user@authenticated.com',
-          outlineTokens
-        };
-        return next();
-      }
-    }
-    
-    // For web interface, redirect to Outline OAuth flow if not authenticated
-    if (this.outlineOAuthService) {
-      res.redirect('/auth/connect');
-    } else {
-      // Legacy token mode - check if we have a token configured
-      if (process.env.OUTLINE_API_TOKEN) {
-        // Allow access with legacy token
-        (req as any).user = {
-          oid: 'legacy-token-user',
-          name: 'Legacy Token User',
-          email: 'legacy@token.mode'
-        };
-        return next();
-      } else {
-        res.redirect('/');
-      }
+
+      next();
+    } catch (error) {
+      logger.error('Error in authentication middleware:', error);
+      res.status(500).json({
+        error: 'internal_error',
+        error_description: 'Authentication processing failed'
+      });
     }
   }
 }
