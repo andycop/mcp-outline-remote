@@ -1,6 +1,8 @@
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { UserContext } from '../../types/context.js';
+import { findUserByEmail, addUserToCollection } from '../../utils/users.js';
+import { toolsLogger as logger } from '../../lib/logger.js';
 
 export const createCollectionSchema = {
   name: z.string().describe('The name of the collection'),
@@ -38,11 +40,53 @@ export async function createCollectionHandler(
       data: requestData
     }, { userId: context.userId, email: context.email });
     
+    const collection = response.data.data;
+    
+    // If we have an authenticated user email, add them to the collection
+    if (context.email && context.email !== process.env.AI_BOT_EMAIL) {
+      try {
+        logger.info('Looking up authenticated user to add to collection', { 
+          email: context.email,
+          collectionId: collection.id
+        });
+        
+        // Find the user by email
+        const user = await findUserByEmail(context.outlineClient, context.email);
+        
+        if (user) {
+          // Add the user to the collection with read_write permissions
+          await addUserToCollection(
+            context.outlineClient, 
+            collection.id, 
+            user.id,
+            'read_write'
+          );
+          
+          logger.info('Successfully added authenticated user to collection', {
+            email: context.email,
+            userId: user.id,
+            collectionId: collection.id
+          });
+        } else {
+          logger.warn('Could not find user by email to add to collection', { 
+            email: context.email 
+          });
+        }
+      } catch (error) {
+        // Log the error but don't fail the collection creation
+        logger.error('Failed to add authenticated user to collection', {
+          email: context.email,
+          collectionId: collection.id,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+    
     return {
       content: [
         {
           type: 'text' as const,
-          text: JSON.stringify(response.data.data, null, 2),
+          text: JSON.stringify(collection, null, 2),
         },
       ],
     };
