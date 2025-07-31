@@ -5,6 +5,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import session from 'express-session';
 import helmet from 'helmet';
+import { csrfSync } from 'csrf-sync';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
@@ -105,6 +106,50 @@ async function startServer() {
     }
   }));
 
+  // Configure CSRF protection
+  const {
+    csrfSynchronisedProtection,
+    generateToken,
+    revokeToken
+  } = csrfSync({
+    // Use default session-based storage
+    ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
+    getTokenFromRequest: (req) => {
+      // Check multiple locations for the token
+      return req.body?._csrf || 
+             req.headers['x-csrf-token'] as string ||
+             req.headers['csrf-token'] as string;
+    }
+  });
+
+  // CSRF protection middleware - must be after session
+  // Note: We exclude certain paths that don't need CSRF protection
+  const csrfExcludedPaths = [
+    '/health',
+    '/authorize', // OAuth flow
+    '/auth/callback', // OAuth callback
+    '/token', // OAuth token endpoint has PKCE
+    '/introspect', // OAuth introspection
+    '/register', // OAuth registration
+    '/.well-known', // Discovery endpoints
+    '/v1/mcp', // MCP protocol uses bearer tokens
+    '/mcp' // MCP protocol uses bearer tokens
+  ];
+
+  app.use((req, res, next) => {
+    // Skip CSRF for excluded paths
+    const shouldSkipCsrf = csrfExcludedPaths.some(path => 
+      req.path.startsWith(path)
+    );
+    
+    if (shouldSkipCsrf) {
+      return next();
+    }
+    
+    // Apply CSRF protection to other routes
+    csrfSynchronisedProtection(req, res, next);
+  });
+
   // OAuth endpoints for MCP authentication
   app.use('/', oauthRoutes);
 
@@ -184,6 +229,13 @@ async function startServer() {
       sessions: mcpManager.getSessionInfo(),
       outline: outlineStatus
     });
+  });
+
+  // CSRF token endpoint - protected
+  app.get('/csrf-token', authMiddleware.ensureAuthenticated.bind(authMiddleware), (req, res) => {
+    // Generate CSRF token for authenticated users
+    const csrfToken = generateToken(req);
+    res.json({ csrfToken });
   });
 
   // Landing page
