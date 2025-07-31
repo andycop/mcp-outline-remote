@@ -442,11 +442,9 @@ async function startServer() {
       storage: process.env.REDIS_URL ? 'Redis' : 'In-Memory'
     });
     
-    logger.info('Outline OAuth Configuration Status', {
-      clientId: process.env.OUTLINE_OAUTH_CLIENT_ID ? 'Set' : '✗ Missing',
-      clientSecret: process.env.OUTLINE_OAUTH_CLIENT_SECRET ? '✓ Set' : '✗ Missing',
-      redirectUri: process.env.OUTLINE_OAUTH_REDIRECT_URI || '✗ Missing',
-      baseUrl: process.env.OUTLINE_API_URL?.replace('/api', '') || '✗ Missing'
+    logger.info('Outline API Configuration Status', {
+      apiUrl: process.env.OUTLINE_API_URL || '✗ Missing',
+      apiToken: process.env.OUTLINE_API_TOKEN ? '✓ Set' : '✗ Missing'
     });
   });
 
