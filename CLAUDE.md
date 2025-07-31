@@ -60,9 +60,10 @@ src/
 │   └── tokens.ts      # Token storage abstraction (Redis optional)
 ├── utils/
 │   ├── logger.ts      # Pino logger with security serializers
-│   └── outline.ts     # Outline API client (lazy-loaded)
+│   ├── outline.ts     # Outline API client (lazy-loaded)
+│   └── errors.ts      # Safe error handling utilities
 └── views/
-    └── index.html     # OAuth consent page template
+    └── index.html     # Minimal landing page (security hardened)
 ```
 
 ### Key Architectural Patterns
@@ -140,11 +141,25 @@ AI_BOT_EMAIL       # Optional: Email for logs (default: api@outline.local)
 
 ## Security Features
 
-- **Helmet.js**: Security headers (CSP, HSTS, etc.)
+### Core Security
+- **Helmet.js**: Enhanced security headers with strict CSP
 - **CORS**: Restricted to same origin
-- **Session Security**: httpOnly, secure cookies in production
+- **Session Security**: httpOnly cookies, sameSite='lax'
+- **CSRF Protection**: csrf-sync with session-based tokens
+- **Rate Limiting**: Auth failures limited to 5/15min per IP
+- **Error Handling**: Generic messages with detailed server logging
+
+### Information Security
+- **Minimal Root Page**: No server details exposed
+- **Protected Endpoints**: /auth/status requires authentication
+- **Reduced Discovery**: OAuth endpoints return minimal info
+- **Secure Health Check**: Only returns status and timestamp
+
+### Additional Protections
+- **Request Size Limits**: 10MB max body size
 - **Token Expiration**: Automatic cleanup of expired tokens
 - **Logging Anonymization**: Sensitive data redaction
+- **Cloudflare Integration**: Real IP tracking via CF headers
 
 ## Production Deployment
 
@@ -154,6 +169,15 @@ AI_BOT_EMAIL       # Optional: Email for logs (default: api@outline.local)
 4. Run behind reverse proxy (app trusts proxy headers)
 5. Monitor `/health` endpoint
 6. Review logs at configured `LOG_LEVEL`
+
+### Cloudflare Tunnel Deployment
+
+The server is optimized for Cloudflare tunnel:
+- Session cookies configured for proxy (secure: false)
+- Real IP detection via CF-Connecting-IP header
+- Rate limiting uses Cloudflare headers
+- HSTS disabled (Cloudflare handles it)
+- Minimal health endpoint for tunnel monitoring
 
 ### Docker Deployment
 ```bash
