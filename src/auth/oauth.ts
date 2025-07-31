@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { getMsalInstance, getRedirectUri, SCOPES } from './azureConfig.js';
 import { createTokenStorage } from '../storage/tokens.js';
 import { authLogger as logger } from '../lib/logger.js';
+import { GenericErrors } from '../utils/errors.js';
 
 declare module 'express-session' {
   interface SessionData {
@@ -31,23 +32,14 @@ const asyncHandler = (fn: Function) => (req: Request, res: Response, next: NextF
 router.get('/.well-known/oauth-authorization-server', (req: Request, res: Response) => {
   const baseUrl = process.env.OAUTH_ISSUER || `https://${req.hostname}`;
   
+  // Minimal OAuth discovery - only required fields for MCP
   res.json({
     issuer: baseUrl,
     authorization_endpoint: `${baseUrl}/authorize`,
     token_endpoint: `${baseUrl}/token`,
-    introspection_endpoint: `${baseUrl}/introspect`,
-    registration_endpoint: `${baseUrl}/register`,
     response_types_supported: ['code'],
-    subject_types_supported: ['public'],
-    id_token_signing_alg_values_supported: ['RS256'],
-    scopes_supported: ['openid', 'email', 'profile'],
-    token_endpoint_auth_methods_supported: ['none'],
-    introspection_endpoint_auth_methods_supported: ['none'],
-    claims_supported: ['sub', 'email', 'name', 'preferred_username'],
-    response_modes_supported: ['query'],
-    grant_types_supported: ['authorization_code', 'refresh_token'],
-    code_challenge_methods_supported: ['S256'],
-    require_pkce: true
+    grant_types_supported: ['authorization_code'],
+    code_challenge_methods_supported: ['S256']
   });
 });
 
@@ -57,17 +49,10 @@ router.get('/.well-known/oauth-authorization-server', (req: Request, res: Respon
 router.get('/.well-known/oauth-protected-resource', (req: Request, res: Response) => {
   const baseUrl = process.env.OAUTH_ISSUER || `https://${req.hostname}`;
   
+  // Minimal protected resource metadata
   res.json({
     resource: baseUrl,
-    oauth_authorization_server: `${baseUrl}/.well-known/oauth-authorization-server`,
-    bearer_methods_supported: ['header'],
-    resource_documentation: `${baseUrl}/docs`,
-    authentication_schemes_supported: [{
-      scheme: 'Bearer',
-      descriptions: {
-        en: 'OAuth 2.0 Bearer Token'
-      }
-    }]
+    oauth_authorization_server: `${baseUrl}/.well-known/oauth-authorization-server`
   });
 });
 
@@ -157,7 +142,7 @@ router.get('/authorize', asyncHandler(async (req: Request, res: Response) => {
         logger.error('Failed to get auth URL:', error);
         res.status(500).json({
           error: 'server_error',
-          error_description: 'Failed to initiate authorization'
+          error_description: GenericErrors.INTERNAL_ERROR
         });
       });
     });
@@ -165,7 +150,7 @@ router.get('/authorize', asyncHandler(async (req: Request, res: Response) => {
     logger.error('Error in authorization endpoint:', error);
     res.status(500).json({
       error: 'server_error',
-      error_description: 'Failed to initiate authorization'
+      error_description: GenericErrors.INTERNAL_ERROR
     });
   }
 }));
@@ -424,7 +409,7 @@ router.post('/token', asyncHandler(async (req: Request, res: Response) => {
     logger.error('Error in token endpoint:', error);
     res.status(500).json({
       error: 'server_error',
-      error_description: 'Token generation failed'
+      error_description: GenericErrors.INTERNAL_ERROR
     });
   }
 }));

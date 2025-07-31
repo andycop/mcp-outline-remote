@@ -1,6 +1,6 @@
-import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { UserContext } from '../../types/context.js';
+import { createSafeError, GenericErrors } from '../../utils/errors.js';
 
 export const listDocumentsSchema = {
   collectionId: z.string().describe('The ID of the collection to list documents from'),
@@ -53,9 +53,11 @@ export async function listDocumentsHandler(
       };
     }
     
-    throw new McpError(
-      ErrorCode.InvalidRequest,
-      `Failed to list documents: ${error.message}`
+    // Use safe error handling to prevent information leakage
+    throw createSafeError(
+      `Failed to list documents: ${GenericErrors.OPERATION_FAILED}`,
+      error,
+      { context: { operation: 'listDocuments', collectionId } }
     );
   }
 }
