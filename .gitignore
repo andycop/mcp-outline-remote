@@ -8,3 +8,11 @@ dist/
 # Docker
 logs/
 .env.docker.local
+
+# Task and documentation files
+tasks/
+claude.md
+CLAUDE.md
+todo.md
+TODO.md
+SECURITY_IMPROVEMENTS.md
