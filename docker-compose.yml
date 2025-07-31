@@ -1,7 +1,7 @@
 services:
   mcp-outline-server:
     build: .
-    container_name: mcp-outline-remote-v2
+    container_name: mcp-outline-remote-v3
     restart: unless-stopped
     ports:
       - "3131:3131"
@@ -11,19 +11,23 @@ services:
       
       # Outline Configuration - REQUIRED  
       - OUTLINE_API_URL=${OUTLINE_API_URL}
-      
-      # Option 1: Outline OAuth (Recommended)
-      - OUTLINE_OAUTH_CLIENT_ID=${OUTLINE_OAUTH_CLIENT_ID}
-      - OUTLINE_OAUTH_CLIENT_SECRET=${OUTLINE_OAUTH_CLIENT_SECRET}
-      - OUTLINE_OAUTH_REDIRECT_URI=${OUTLINE_OAUTH_REDIRECT_URI}
-      
-      # Option 2: Legacy API Token (Fallback)
       - OUTLINE_API_TOKEN=${OUTLINE_API_TOKEN}
+      
+      # MCP OAuth Configuration (Azure AD)
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID}
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
+      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
+      - AZURE_REDIRECT_URI=${AZURE_REDIRECT_URI}
+      
+      # OAuth Settings
+      - ALLOWED_REDIRECT_URIS=${ALLOWED_REDIRECT_URIS:-https://claude.ai/api/mcp/auth_callback}
+      - OAUTH_ISSUER=${OAUTH_ISSUER}
       
       # Server Configuration
       - PORT=3131
       - PUBLIC_URL=${PUBLIC_URL}
       - NODE_ENV=${NODE_ENV:-production}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
       - REDIS_URL=redis://redis:6379
     depends_on:
       - redis

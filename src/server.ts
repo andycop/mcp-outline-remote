@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import session from 'express-session';
 import helmet from 'helmet';
@@ -15,6 +15,7 @@ import { McpServerManager } from './mcp/server.js';
 import { createTokenStorage } from './storage/tokens.js';
 import { createOutlineApiClient } from './utils/outline-client.js';
 import { serverLogger as logger } from './lib/logger.js';
+import oauthRoutes from './auth/oauth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -82,239 +83,8 @@ async function startServer() {
     }
   }));
 
-  // TODO: Add MCP OAuth endpoints here (similar to memory-multiuser)
-  /* OAuth endpoints temporarily disabled during refactoring
-  app.get('/authorize', async (req, res) => {
-    const { response_type, client_id, redirect_uri, scope, state, code_challenge, code_challenge_method } = req.query;
-    
-    if (!outlineOAuthService) {
-      // Legacy token mode - immediately authorize
-      if (process.env.OUTLINE_API_TOKEN) {
-        // Generate a simple authorization code
-        const authCode = `auth_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        
-        // Store the auth request details for token exchange
-        (req.session as any).authRequest = {
-          client_id,
-          redirect_uri,
-          scope,
-          state,
-          code_challenge,
-          code_challenge_method,
-          authCode,
-          userId: process.env.AI_BOT_USER_ID || 'api-user'
-        };
-        
-        // Redirect back to Claude.ai with auth code
-        const callbackUrl = `${redirect_uri}?code=${authCode}&state=${state}`;
-        logger.info('Legacy token authorization successful', { client_id, state });
-        res.redirect(callbackUrl);
-        return;
-      } else {
-        res.status(503).json({ 
-          error: 'service_unavailable',
-          error_description: 'No authentication method configured'
-        });
-        return;
-      }
-    }
-    
-    // OAuth mode - start Outline OAuth flow
-    // Generate a session-based user ID
-    let userId = (req.session as any)?.outlineUserId;
-    if (!userId) {
-      userId = `outline-user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      (req.session as any).outlineUserId = userId;
-    }
-    
-    // Store the original Claude.ai auth request
-    (req.session as any).claudeAuthRequest = {
-      client_id,
-      redirect_uri,
-      scope,
-      state,
-      code_challenge,
-      code_challenge_method
-    };
-    
-    // Check if user is already connected to Outline
-    const isAuthorized = await outlineOAuthService.isUserAuthorized(userId);
-    if (isAuthorized) {
-      // User already authorized - generate auth code and redirect back
-      const authCode = `auth_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      (req.session as any).authRequest = {
-        client_id,
-        redirect_uri,
-        scope,
-        state,
-        code_challenge,
-        code_challenge_method,
-        authCode,
-        userId
-      };
-      
-      const callbackUrl = `${redirect_uri}?code=${authCode}&state=${state}`;
-      logger.info('User already authorized for Outline, redirecting to Claude.ai', { userId, state });
-      res.redirect(callbackUrl);
-      return;
-    }
-    
-    // User not authorized - redirect to Outline OAuth
-    const { url: outlineAuthUrl, codeVerifier, state: oauthState } = outlineOAuthService.generateAuthUrl(userId);
-    
-    // Store OAuth state for callback validation
-    (req.session as any).outlineOAuthState = {
-      codeVerifier,
-      userId,
-      originalUrl: '/' // For web flow, could be used for return URL
-    };
-    
-    logger.info('Redirecting to Outline OAuth for new authorization', { userId, state: oauthState });
-    res.redirect(outlineAuthUrl);
-  });
-
-  // Token endpoint for Claude.ai (both initial and refresh)
-  app.post('/token', async (req, res) => {
-    const { grant_type, code, redirect_uri, client_id, code_verifier, refresh_token } = req.body;
-    
-    // Handle refresh token requests
-    if (grant_type === 'refresh_token') {
-      if (!refresh_token) {
-        res.status(400).json({
-          error: 'invalid_request',
-          error_description: 'Refresh token is required for refresh_token grant type'
-        });
-        return;
-      }
-      
-      // Validate the refresh token
-      const refreshTokenData = await services.tokenStorage.getRefreshToken(refresh_token);
-      if (!refreshTokenData) {
-        res.status(400).json({
-          error: 'invalid_grant',
-          error_description: 'Refresh token is invalid or expired'
-        });
-        return;
-      }
-      
-      // Check if refresh token is expired
-      if (refreshTokenData.expiresAt < Date.now()) {
-        res.status(400).json({
-          error: 'invalid_grant',
-          error_description: 'Refresh token has expired'
-        });
-        return;
-      }
-      
-      // Generate new tokens
-      const newAccessToken = `outline_access_${Date.now()}_${Math.random().toString(36).substr(2, 16)}`;
-      const newRefreshToken = `outline_refresh_${Date.now()}_${Math.random().toString(36).substr(2, 16)}`;
-      const expiresIn = 24 * 60 * 60; // 24 hours
-      const refreshExpiresIn = 7 * 24 * 60 * 60; // 7 days
-      
-      // Store new access token
-      await services.tokenStorage.setAccessToken(newAccessToken, {
-        token: newAccessToken,
-        userId: refreshTokenData.userId,
-        clientId: refreshTokenData.clientId,
-        scope: refreshTokenData.scope,
-        expiresAt: Date.now() + (expiresIn * 1000)
-      });
-      
-      // Store new refresh token
-      await services.tokenStorage.setRefreshToken(newRefreshToken, {
-        token: newRefreshToken,
-        userId: refreshTokenData.userId,
-        clientId: refreshTokenData.clientId,
-        scope: refreshTokenData.scope,
-        expiresAt: Date.now() + (refreshExpiresIn * 1000)
-      });
-      
-      // Clean up old refresh token
-      await services.tokenStorage.deleteRefreshToken(refresh_token);
-      
-      logger.info('Token refreshed successfully for Claude.ai client', { 
-        userId: refreshTokenData.userId,
-        client_id: refreshTokenData.clientId 
-      });
-      
-      res.json({
-        access_token: newAccessToken,
-        refresh_token: newRefreshToken,
-        token_type: 'Bearer',
-        expires_in: expiresIn
-      });
-      return;
-    }
-    
-    if (grant_type !== 'authorization_code') {
-      res.status(400).json({
-        error: 'unsupported_grant_type',
-        error_description: 'Only authorization_code and refresh_token grant types are supported'
-      });
-      return;
-    }
-    
-    // Find the auth request by code in token storage
-    const authCodeData = await services.tokenStorage.getAuthCode(code as string);
-    if (!authCodeData) {
-      res.status(400).json({
-        error: 'invalid_grant',
-        error_description: 'Authorization code is invalid or expired'
-      });
-      return;
-    }
-    
-    // Validate PKCE if provided
-    if (authCodeData.codeChallenge && code_verifier) {
-      // Simple validation - in production you'd want proper PKCE validation
-      logger.debug('PKCE validation', { 
-        hasChallenge: !!authCodeData.codeChallenge,
-        hasVerifier: !!code_verifier 
-      });
-    }
-    
-    // Generate access token with longer lifetime for persistent sessions
-    const accessToken = `outline_access_${Date.now()}_${Math.random().toString(36).substr(2, 16)}`;
-    const refreshToken = `outline_refresh_${Date.now()}_${Math.random().toString(36).substr(2, 16)}`;
-    const expiresIn = 24 * 60 * 60; // 24 hours (much longer for MCP clients)
-    
-    // Store both access and refresh tokens in our storage
-    await services.tokenStorage.setAccessToken(accessToken, {
-      token: accessToken,
-      userId: authCodeData.userId,
-      clientId: client_id as string,
-      scope: authCodeData.scope as string,
-      expiresAt: Date.now() + (expiresIn * 1000)
-    });
-    
-    await services.tokenStorage.setRefreshToken(refreshToken, {
-      token: refreshToken,
-      userId: authCodeData.userId,
-      clientId: client_id as string,
-      scope: authCodeData.scope as string,
-      expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000) // 7 days
-    });
-    
-    // Clean up auth code (one-time use)
-    await services.tokenStorage.deleteAuthCode(code as string);
-    
-    logger.info('Token issued successfully', { 
-      userId: authCodeData.userId,
-      client_id,
-      scope: authCodeData.scope 
-    });
-    
-    res.json({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      token_type: 'Bearer',
-      expires_in: expiresIn,
-      scope: authCodeData.scope
-    });
-  });
-  */
+  // OAuth endpoints for MCP authentication
+  app.use('/', oauthRoutes);
 
   // API status route
   app.get('/auth/status', (req, res) => {
@@ -410,23 +180,37 @@ async function startServer() {
     res.send(html);
   });
 
-  // MCP endpoints (protected)
-  app.post('/v1/mcp', (req, res, next) => {
-    logger.info('MCP POST request received', {
-      hasAuth: !!req.headers.authorization,
-      authPrefix: req.headers.authorization?.substring(0, 30),
-      contentType: req.headers['content-type'],
-      method: req.body?.method,
-      bodyPreview: req.body ? JSON.stringify(req.body).substring(0, 200) : 'no body'
-    });
-    next();
-  }, authMiddleware.ensureAuthenticated.bind(authMiddleware), (req, res) => {
-    mcpManager.handlePost(req, res);
-  });
+  // MCP endpoints (protected) - both /mcp and /v1/mcp supported
+  const mcpPostHandler = [
+    (req: Request, res: Response, next: NextFunction) => {
+      logger.info('MCP POST request received', {
+        path: req.path,
+        hasAuth: !!req.headers.authorization,
+        authPrefix: req.headers.authorization?.substring(0, 30),
+        contentType: req.headers['content-type'],
+        method: req.body?.method,
+        bodyPreview: req.body ? JSON.stringify(req.body).substring(0, 200) : 'no body'
+      });
+      next();
+    },
+    authMiddleware.ensureAuthenticated.bind(authMiddleware),
+    (req: Request, res: Response) => {
+      mcpManager.handlePost(req, res);
+    }
+  ];
 
-  app.get('/v1/mcp', authMiddleware.ensureAuthenticated.bind(authMiddleware), (req, res) => {
-    mcpManager.handleGet(req, res);
-  });
+  const mcpGetHandler = [
+    authMiddleware.ensureAuthenticated.bind(authMiddleware),
+    (req: Request, res: Response) => {
+      mcpManager.handleGet(req, res);
+    }
+  ];
+
+  // Support both /mcp and /v1/mcp paths
+  app.post('/mcp', mcpPostHandler);
+  app.post('/v1/mcp', mcpPostHandler);
+  app.get('/mcp', mcpGetHandler);
+  app.get('/v1/mcp', mcpGetHandler);
 
   const server = app.listen(PORT, '0.0.0.0', () => {
     logger.info(`MCP Outline Remote Server v3 started`, {

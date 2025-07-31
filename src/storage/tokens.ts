@@ -1,4 +1,5 @@
 interface AuthCodeData {
+  code: string;
   clientId: string;
   redirectUri: string;
   scope: string;
@@ -6,6 +7,7 @@ interface AuthCodeData {
   codeChallengeMethod?: string;
   state?: string;
   userId: string;
+  userEmail?: string;
   expiresAt: number;
 }
 
@@ -13,6 +15,7 @@ interface AccessTokenData {
   token: string;
   clientId: string;
   userId: string;
+  userEmail?: string;
   email?: string;
   name?: string;
   scope: string;
@@ -23,6 +26,7 @@ interface RefreshTokenData {
   token: string;
   clientId: string;
   userId: string;
+  userEmail?: string;
   scope: string;
   expiresAt: number;
 }

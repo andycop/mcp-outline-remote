@@ -58,13 +58,13 @@ export class AuthMiddleware {
       // Set user context from OAuth token data
       (req as AuthenticatedRequest).user = {
         userId: tokenData.userId,
-        email: tokenData.email || 'user@authenticated.com',
+        email: tokenData.userEmail || tokenData.email || 'user@authenticated.com',
         name: tokenData.name
       };
 
       logger.debug('User authenticated successfully', {
         userId: tokenData.userId,
-        email: tokenData.email
+        email: tokenData.userEmail || tokenData.email
       });
 
       next();

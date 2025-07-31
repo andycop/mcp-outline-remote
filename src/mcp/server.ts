@@ -149,24 +149,23 @@ export class McpServerManager {
       } 
     });
 
-    // Extract user context from request - use real Outline user ID
+    // Extract user context from request
     const user = (req as any).user;
-    const sessionUserId = (req.session as any)?.outlineUserId;
     
-    // User ID should now be the real Outline user ID from middleware resolution
-    const userId = user?.oid || sessionUserId || process.env.AI_BOT_USER_ID || 'api-user';
+    // Use authenticated user info from OAuth
+    const userId = user?.userId || process.env.AI_BOT_USER_ID || 'api-user';
     const userContext: UserContext = { 
       userId, 
-      email: user?.email,
-      name: user?.name,
+      email: user?.email || process.env.AI_BOT_EMAIL || 'api@outline.local',
+      name: user?.name || process.env.AI_BOT_NAME || 'API User',
       outlineClient: this.outlineClient 
     };
     
     logger.debug('MCP server created with user context', {
-      realUserId: userId,
-      sessionUserId: user?.sessionUserId,
-      hasUser: !!user,
-      hasSession: !!sessionUserId
+      userId: userId,
+      email: userContext.email,
+      name: userContext.name,
+      hasAuthenticatedUser: !!user
     });
 
     // Document tools (all now using OAuth authentication)
@@ -252,7 +251,7 @@ export class McpServerManager {
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (sessionId: string) => {
           const user = (req as any).user;
-          const userId = user?.oid || 'unknown';
+          const userId = user?.userId || 'unknown';
           
           logger.info('MCP session initialized', { sessionId, userId });
           this.transports[sessionId] = {

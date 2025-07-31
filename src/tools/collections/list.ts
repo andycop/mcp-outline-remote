@@ -25,18 +25,36 @@ export async function listCollectionsHandler(
       }
     }, { userId: context.userId, email: context.email });
     
-    logger.debug('Outline API response', { response: JSON.stringify(response.data).substring(0, 200) }, { userId: context.userId, email: context.email });
+    logger.debug('Outline API response', { 
+      status: response.status,
+      hasData: !!response.data,
+      hasDataData: !!response.data?.data,
+      responsePreview: JSON.stringify(response.data).substring(0, 500) 
+    }, { userId: context.userId, email: context.email });
     
-    // Check if response has data
-    if (!response.data || !response.data.data) {
-      throw new Error('Invalid response from Outline API');
+    // Check if response has data - Outline API returns data in response.data
+    if (!response.data) {
+      logger.error('Invalid Outline API response structure', {
+        status: response.status,
+        responseData: response.data,
+        expectedStructure: 'response.data'
+      });
+      throw new Error(`Invalid response from Outline API: ${JSON.stringify(response.data).substring(0, 200)}`);
     }
+    
+    // Check if it's an error response
+    if (response.data.error || response.data.ok === false) {
+      throw new Error(`Outline API error: ${response.data.error || 'Request failed'}`);
+    }
+    
+    // The actual data might be in response.data.data or directly in response.data
+    const collections = response.data.data || response.data;
     
     return {
       content: [
         {
           type: 'text' as const,
-          text: JSON.stringify(response.data.data, null, 2),
+          text: JSON.stringify(collections, null, 2),
         },
       ],
     };

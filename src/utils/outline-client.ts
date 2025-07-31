@@ -55,8 +55,9 @@ export class OutlineApiClient {
       // Log request details with user context if available
       logger.info('Making Outline API request', {
         endpoint,
-        method: options.method || 'GET',
+        method: options.method || 'POST',
         hasData: !!options.data,
+        hasAuth: !!this.httpClient.defaults.headers.Authorization,
         timeout: config.timeout || 30000,
         ...(userContext && { userContext })
       });
@@ -126,6 +127,10 @@ export class OutlineApiClient {
       const user = response.data?.data?.user;
       
       if (user) {
+        logger.info('Successfully fetched API user info', { 
+          userId: user.id,
+          userName: user.name 
+        });
         return {
           id: user.id,
           name: user.name,
