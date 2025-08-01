@@ -238,6 +238,11 @@ async function startServer() {
     res.json({ csrfToken });
   });
 
+  // Serve favicon
+  app.get('/favicon.png', (req, res) => {
+    res.sendFile(join(__dirname, 'views', 'favicon.png'));
+  });
+
   // Landing page
   app.get('/', async (req, res) => {
     const template = readFileSync(join(__dirname, 'views', 'index.html'), 'utf-8');
@@ -252,23 +257,101 @@ async function startServer() {
   // MCP endpoints (protected) - both /mcp and /v1/mcp supported
   const mcpPostHandler = [
     (req: Request, res: Response, next: NextFunction) => {
+      // Add request start time
+      (req as any).startTime = Date.now();
+      
       logger.info('MCP POST request received', {
         path: req.path,
         hasAuth: !!req.headers.authorization,
         authPrefix: req.headers.authorization?.substring(0, 30),
         contentType: req.headers['content-type'],
         method: req.body?.method,
-        bodyPreview: req.body ? JSON.stringify(req.body).substring(0, 200) : 'no body'
+        bodyPreview: req.body ? JSON.stringify(req.body).substring(0, 200) : 'no body',
+        headers: {
+          'user-agent': req.headers['user-agent'],
+          'x-forwarded-for': req.headers['x-forwarded-for'],
+          'cf-connecting-ip': req.headers['cf-connecting-ip']
+        },
+        query: req.query,
+        ip: req.ip
       });
+      
+      // Special debug logging for unauthenticated requests
+      if (!req.headers.authorization) {
+        logger.warn('Unauthenticated MCP request details', {
+          fullBody: req.body,
+          allHeaders: req.headers,
+          url: req.url,
+          originalUrl: req.originalUrl,
+          baseUrl: req.baseUrl,
+          protocol: req.protocol,
+          hostname: req.hostname
+        });
+      }
+      
       next();
     },
     authMiddleware.ensureAuthenticated.bind(authMiddleware),
     (req: Request, res: Response) => {
+      // Wrap response to log timing
+      const originalSend = res.send;
+      const originalJson = res.json;
+      const startTime = (req as any).startTime;
+      
+      const logTiming = (body: any) => {
+        const duration = Date.now() - startTime;
+        logger.debug('MCP POST response sent', {
+          method: req.body?.method,
+          duration_ms: duration,
+          slow: duration > 1000, // Flag slow requests over 1 second
+          path: req.path
+        });
+        return body;
+      };
+      
+      res.send = function(body: any) {
+        logTiming(body);
+        return originalSend.call(this, body);
+      };
+      
+      res.json = function(body: any) {
+        logTiming(body);
+        return originalJson.call(this, body);
+      };
+      
       mcpManager.handlePost(req, res);
     }
   ];
 
   const mcpGetHandler = [
+    (req: Request, res: Response, next: NextFunction) => {
+      logger.info('MCP GET request received', {
+        path: req.path,
+        hasAuth: !!req.headers.authorization,
+        authPrefix: req.headers.authorization?.substring(0, 30),
+        headers: {
+          'user-agent': req.headers['user-agent'],
+          'x-forwarded-for': req.headers['x-forwarded-for'],
+          'cf-connecting-ip': req.headers['cf-connecting-ip']
+        },
+        query: req.query,
+        ip: req.ip
+      });
+      
+      // Special debug logging for unauthenticated requests
+      if (!req.headers.authorization) {
+        logger.warn('Unauthenticated MCP GET request details', {
+          allHeaders: req.headers,
+          url: req.url,
+          originalUrl: req.originalUrl,
+          baseUrl: req.baseUrl,
+          protocol: req.protocol,
+          hostname: req.hostname
+        });
+      }
+      
+      next();
+    },
     authMiddleware.ensureAuthenticated.bind(authMiddleware),
     (req: Request, res: Response) => {
       mcpManager.handleGet(req, res);

@@ -139,6 +139,8 @@ export class McpServerManager {
   }
 
   createServer(req: Request): McpServer {
+    const startTime = Date.now();
+    
     const server = new McpServer({
       name: 'outline-mcp-server',
       version: '1.0.0',
@@ -228,6 +230,13 @@ export class McpServerManager {
     server.tool('delete_collection', 'Delete a collection', deleteCollectionSchema, 
       async (args) => deleteCollectionHandler(args, userContext));
 
+    const duration = Date.now() - startTime;
+    logger.debug('MCP server created', {
+      duration_ms: duration,
+      tool_count: 12,
+      userId: userContext.userId
+    });
+
     return server;
   }
 
@@ -237,6 +246,7 @@ export class McpServerManager {
 
   async handlePost(req: Request, res: Response): Promise<void> {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
+    const startTime = Date.now();
     
     logger.debug('MCP POST request', {
       sessionId: sessionId || 'none',
@@ -244,52 +254,81 @@ export class McpServerManager {
       hasBody: !!req.body
     });
     
-    if (!sessionId && this.isInitializeRequest(req.body)) {
-      logger.info('New MCP session initialization');
-      
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
-        onsessioninitialized: (sessionId: string) => {
-          const user = (req as any).user;
-          const userId = user?.userId || 'unknown';
-          
-          logger.info('MCP session initialized', { sessionId, userId });
-          this.transports[sessionId] = {
-            transport,
-            lastActivity: Date.now(),
-            userId
-          };
-        }
-      });
+    try {
+      if (!sessionId && this.isInitializeRequest(req.body)) {
+        logger.info('New MCP session initialization');
+        
+        const transportStartTime = Date.now();
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+          onsessioninitialized: (sessionId: string) => {
+            const user = (req as any).user;
+            const userId = user?.userId || 'unknown';
+            
+            const transportDuration = Date.now() - transportStartTime;
+            logger.debug('MCP session initialized', { 
+              sessionId, 
+              userId,
+              transport_init_ms: transportDuration
+            });
+            this.transports[sessionId] = {
+              transport,
+              lastActivity: Date.now(),
+              userId
+            };
+          }
+        });
 
-      const server = this.createServer(req);
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-    } else if (sessionId && this.transports[sessionId]) {
-      logger.debug('Using existing MCP session', { sessionId });
-      // Update last activity
-      this.transports[sessionId].lastActivity = Date.now();
-      await this.transports[sessionId].transport.handleRequest(req, res, req.body);
-    } else {
-      logger.warn('No valid MCP session found', { sessionId: sessionId || 'none' });
-      res.status(400).json({ error: 'Invalid session' });
+        const serverCreateStartTime = Date.now();
+        const server = this.createServer(req);
+        const serverCreateDuration = Date.now() - serverCreateStartTime;
+        
+        const connectStartTime = Date.now();
+        await server.connect(transport);
+        const connectDuration = Date.now() - connectStartTime;
+        
+        logger.debug('MCP initialization phases', {
+          server_create_ms: serverCreateDuration,
+          connect_ms: connectDuration,
+          total_init_ms: Date.now() - transportStartTime
+        });
+        
+        await transport.handleRequest(req, res, req.body);
+      } else if (sessionId && this.transports[sessionId]) {
+        logger.debug('Using existing MCP session', { sessionId });
+        // Update last activity
+        this.transports[sessionId].lastActivity = Date.now();
+        await this.transports[sessionId].transport.handleRequest(req, res, req.body);
+      } else {
+        logger.warn('No valid MCP session found', { sessionId: sessionId || 'none' });
+        res.status(400).json({ error: 'Invalid session' });
+      }
+    } finally {
+      // Log timing after transport handles request
+      const duration = Date.now() - startTime;
+      logger.debug('MCP POST request completed', {
+        method: req.body?.method || 'unknown',
+        duration_ms: duration,
+        slow: duration > 1000,
+        sessionId: sessionId || 'none'
+      });
     }
   }
 
   async handleGet(req: Request, res: Response): Promise<void> {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
     
-    logger.debug('MCP GET request for SSE', { 
+    logger.debug('MCP GET request for streaming', { 
       sessionId: sessionId || 'none' 
     });
     
     if (sessionId && this.transports[sessionId]) {
-      logger.debug('SSE connection established', { sessionId });
+      logger.debug('Streaming connection established', { sessionId });
       // Update last activity
       this.transports[sessionId].lastActivity = Date.now();
       await this.transports[sessionId].transport.handleRequest(req, res);
     } else {
-      logger.warn('No valid session for SSE', { sessionId: sessionId || 'none' });
+      logger.warn('No valid session for streaming', { sessionId: sessionId || 'none' });
       res.status(400).json({ error: 'Invalid session' });
     }
   }

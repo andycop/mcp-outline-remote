@@ -38,6 +38,9 @@ function createOutlineClient() {
   // Add request/response interceptors for logging
   _outlineClient.interceptors.request.use(
     (config: any) => {
+      // Add timing info
+      config.metadata = { startTime: Date.now() };
+      
       logger.debug('Outline API request', { 
         method: config.method?.toUpperCase(),
         url: config.url,
@@ -53,17 +56,26 @@ function createOutlineClient() {
 
   _outlineClient.interceptors.response.use(
     (response: any) => {
+      const duration = Date.now() - response.config.metadata?.startTime;
+      
       logger.debug('Outline API response', { 
         status: response.status,
-        url: response.config.url 
+        url: response.config.url,
+        duration_ms: duration,
+        slow: duration > 500 // Flag slow API calls over 500ms
       });
       return response;
     },
     (error: any) => {
+      const duration = error.config?.metadata?.startTime 
+        ? Date.now() - error.config.metadata.startTime 
+        : null;
+        
       logger.error('Outline API response error', { 
         status: error.response?.status,
         url: error.config?.url,
-        message: error.message 
+        message: error.message,
+        duration_ms: duration
       });
       return Promise.reject(error);
     }

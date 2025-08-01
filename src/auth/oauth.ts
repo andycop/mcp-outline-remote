@@ -256,6 +256,7 @@ router.get('/auth/callback', asyncHandler(async (req: Request, res: Response) =>
  * Token endpoint - exchanges authorization code for access token or refreshes token
  */
 router.post('/token', asyncHandler(async (req: Request, res: Response) => {
+  const startTime = Date.now();
   try {
     const { grant_type, code, redirect_uri, code_verifier, client_id, refresh_token } = req.body;
     const tokenStorage = await createTokenStorage();
